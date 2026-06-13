@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go version *)",
+      "Bash(npm --version)",
+      "Bash(go mod *)",
+      "Bash(go build *)",
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(tail -40 /tmp/npm-cache-badminton/_logs/2026-06-12T18_58_36_056Z-debug-0.log)",
+      "Read(//private/tmp/npm-cache-badminton/_logs/**)",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(echo \"TSC_EXIT:$?\")",
+      "Bash(go vet *)",
+      "Read(//private/tmp/**)",
+      "Bash(rm -f bm-test.db*)",
+      "Bash(PORT=18080 DB_PATH=/tmp/bm-test.db /tmp/badminton-app)",
+      "Bash(rm -f /tmp/bm-test.db /tmp/bm-test.db-wal /tmp/bm-test.db-shm; PORT=18080 DB_PATH=/tmp/bm-test.db /tmp/badminton-app)",
+      "Bash(bash /tmp/bm-smoke.sh)"
+    ],
+    "additionalDirectories": [
+      "/tmp"
+    ]
+  }
+}
