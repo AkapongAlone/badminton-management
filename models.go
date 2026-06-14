@@ -84,6 +84,17 @@ type StateGame struct {
 	StartedAt int64    `json:"startedAt"`
 }
 
+// HistoryGame is a finished game, shown in the admin queue tab ("เล่นจบแล้ว").
+type HistoryGame struct {
+	ID           string   `json:"id"`
+	CourtLabel   string   `json:"courtLabel"`
+	TeamA        []string `json:"teamA"`
+	TeamB        []string `json:"teamB"`
+	StartedAt    int64    `json:"startedAt"`
+	EndedAt      int64    `json:"endedAt"`
+	ShuttlesUsed int      `json:"shuttlesUsed"`
+}
+
 type StateCourt struct {
 	ID     string     `json:"id"`
 	Label  string     `json:"label"`
@@ -124,6 +135,7 @@ type StateResponse struct {
 	Courts     []StateCourt     `json:"courts"`
 	Players    []StatePlayer    `json:"players"`
 	MatchQueue []MatchQueueItem `json:"matchQueue"`
+	History    []HistoryGame    `json:"history"` // admin only — finished games
 	Now        int64            `json:"now"`
 	IsAdmin    bool             `json:"isAdmin"`
 	Summary    *Summary         `json:"summary,omitempty"` // admin only

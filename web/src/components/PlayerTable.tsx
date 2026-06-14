@@ -8,10 +8,6 @@ export default function PlayerTable({
   serverNow,
   sessionOpen,
   waitAlertMinutes,
-  teamA,
-  teamB,
-  onToggleA,
-  onToggleB,
   onTogglePaid,
   onCheckout,
   onEditShuttles,
@@ -20,10 +16,6 @@ export default function PlayerTable({
   serverNow: () => number
   sessionOpen: boolean
   waitAlertMinutes: number
-  teamA: string[]
-  teamB: string[]
-  onToggleA: (id: string) => void
-  onToggleB: (id: string) => void
   onTogglePaid: (p: StatePlayer) => void
   onCheckout: (p: StatePlayer) => void
   onEditShuttles: (p: StatePlayer) => void
@@ -35,9 +27,6 @@ export default function PlayerTable({
     if (a.status === 'waiting') return a.waitingSince - b.waitingSince
     return a.checkedInAt - b.checkedInAt
   })
-
-  const inA = (id: string) => teamA.includes(id)
-  const inB = (id: string) => teamB.includes(id)
 
   return (
     <div className="overflow-x-auto rounded-2xl bg-white shadow-sm">
@@ -52,7 +41,6 @@ export default function PlayerTable({
             <th className="px-2 py-2.5 text-center">ลูก</th>
             <th className="px-2 py-2.5 text-right">ยอด</th>
             <th className="px-2 py-2.5 text-center">จ่าย</th>
-            <th className="px-3 py-2.5 text-center">ทีม</th>
             <th className="px-3 py-2.5"></th>
           </tr>
         </thead>
@@ -61,17 +49,11 @@ export default function PlayerTable({
             const isOut = p.status === 'checked_out'
             const waitMs = now - p.waitingSince
             const overdue = p.status === 'waiting' && waitMs >= waitAlertMinutes * 60_000
-            const selectedA = inA(p.id)
-            const selectedB = inB(p.id)
-            const aFull = teamA.length >= 2
-            const bFull = teamB.length >= 2
 
             return (
               <tr
                 key={p.id}
-                className={`border-b border-gray-50 last:border-0 ${isOut ? 'opacity-40' : ''} ${
-                  selectedA ? 'bg-emerald-50' : selectedB ? 'bg-sky-50' : ''
-                }`}
+                className={`border-b border-gray-50 last:border-0 ${isOut ? 'opacity-40' : ''}`}
               >
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-2">
@@ -106,35 +88,6 @@ export default function PlayerTable({
                     {p.paid ? '✓ แล้ว' : 'ยังไม่จ่าย'}
                   </button>
                 </td>
-                {/* Team A/B toggle — only for waiting players in open session */}
-                <td className="px-3 py-2 text-center">
-                  {sessionOpen && p.status === 'waiting' && !isOut && (
-                    <div className="flex justify-center gap-1">
-                      <button
-                        onClick={() => onToggleA(p.id)}
-                        disabled={!selectedA && aFull}
-                        className={`w-7 h-7 rounded-full text-xs font-bold transition-colors ${
-                          selectedA
-                            ? 'bg-emerald-600 text-white'
-                            : 'border border-emerald-400 text-emerald-600 hover:bg-emerald-50 disabled:opacity-25 disabled:cursor-not-allowed'
-                        }`}
-                      >
-                        A
-                      </button>
-                      <button
-                        onClick={() => onToggleB(p.id)}
-                        disabled={!selectedB && bFull}
-                        className={`w-7 h-7 rounded-full text-xs font-bold transition-colors ${
-                          selectedB
-                            ? 'bg-sky-600 text-white'
-                            : 'border border-sky-400 text-sky-600 hover:bg-sky-50 disabled:opacity-25 disabled:cursor-not-allowed'
-                        }`}
-                      >
-                        B
-                      </button>
-                    </div>
-                  )}
-                </td>
                 <td className="px-3 py-2">
                   {!isOut && sessionOpen && (
                     <div className="flex justify-end gap-1.5">
@@ -160,7 +113,7 @@ export default function PlayerTable({
           })}
           {sorted.length === 0 && (
             <tr>
-              <td colSpan={10} className="px-3 py-8 text-center text-gray-400">ยังไม่มีผู้เล่นเช็คอิน</td>
+              <td colSpan={9} className="px-3 py-8 text-center text-gray-400">ยังไม่มีผู้เล่นเช็คอิน</td>
             </tr>
           )}
         </tbody>

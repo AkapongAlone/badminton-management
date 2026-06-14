@@ -26,82 +26,24 @@ func (s *Server) handleState(c *fiber.Ctx) error {
 	}
 	isAdmin := reqToken(c) != "" && reqToken(c) == adminToken
 
-	// Players
-	rows, err := s.db.Query(`
-		SELECT sp.id, sp.roster_player_id, rp.name, rp.skill, rp.avatar_seed,
-		       sp.status, sp.checked_in_at, sp.waiting_since, sp.games_played, sp.shuttles_used, sp.paid, sp.note
-		FROM session_players sp
-		JOIN roster_players rp ON rp.id = sp.roster_player_id
-		WHERE sp.session_id = ?
-		ORDER BY sp.checked_in_at`, sessionID)
+	players, err := s.loadPlayers(sessionID, sr.Config)
 	if err != nil {
 		return errJSON(c, 500, err.Error())
 	}
-	defer rows.Close()
-	players := []StatePlayer{}
-	for rows.Next() {
-		var p StatePlayer
-		var paid int
-		if err := rows.Scan(&p.ID, &p.RosterPlayerID, &p.Name, &p.Skill, &p.AvatarSeed,
-			&p.Status, &p.CheckedInAt, &p.WaitingSince, &p.GamesPlayed, &p.ShuttlesUsed, &paid, &p.Note); err != nil {
-			return errJSON(c, 500, err.Error())
-		}
-		p.Paid = paid == 1
-		p.Total = sr.Config.playerTotal(p.ShuttlesUsed)
-		players = append(players, p)
+	courts, err := s.loadCourts(sessionID)
+	if err != nil {
+		return errJSON(c, 500, err.Error())
 	}
 
-	// Courts + active games
-	courts := []StateCourt{}
-	crows, err := s.db.Query(`SELECT id, label, status FROM courts WHERE session_id = ? ORDER BY created_at`, sessionID)
-	if err != nil {
-		return errJSON(c, 500, err.Error())
-	}
-	defer crows.Close()
-	for crows.Next() {
-		var ct StateCourt
-		if err := crows.Scan(&ct.ID, &ct.Label, &ct.Status); err != nil {
-			return errJSON(c, 500, err.Error())
-		}
-		courts = append(courts, ct)
-	}
-	grows, err := s.db.Query(`SELECT id, court_id, team_a, team_b, started_at FROM games WHERE session_id = ? AND ended_at IS NULL`, sessionID)
-	if err != nil {
-		return errJSON(c, 500, err.Error())
-	}
-	defer grows.Close()
-	gamesByCourt := map[string]*StateGame{}
-	for grows.Next() {
-		var g StateGame
-		var courtID, teamA, teamB string
-		if err := grows.Scan(&g.ID, &courtID, &teamA, &teamB, &g.StartedAt); err != nil {
-			return errJSON(c, 500, err.Error())
-		}
-		json.Unmarshal([]byte(teamA), &g.TeamA)
-		json.Unmarshal([]byte(teamB), &g.TeamB)
-		gamesByCourt[courtID] = &g
-	}
-	for i := range courts {
-		courts[i].Game = gamesByCourt[courts[i].ID]
-	}
-
-	// Match queue (admin only — public board doesn't need it)
+	// Match queue + finished-game history (admin only — public board doesn't need them)
 	matchQueue := []MatchQueueItem{}
+	history := []HistoryGame{}
 	if isAdmin {
-		mqRows, err := s.db.Query(`SELECT id, team_a, team_b, created_at FROM match_queue WHERE session_id = ? ORDER BY created_at`, sessionID)
-		if err != nil {
+		if matchQueue, err = s.loadMatchQueue(sessionID); err != nil {
 			return errJSON(c, 500, err.Error())
 		}
-		defer mqRows.Close()
-		for mqRows.Next() {
-			var mq MatchQueueItem
-			var ta, tb string
-			if err := mqRows.Scan(&mq.ID, &ta, &tb, &mq.CreatedAt); err != nil {
-				return errJSON(c, 500, err.Error())
-			}
-			json.Unmarshal([]byte(ta), &mq.TeamA)
-			json.Unmarshal([]byte(tb), &mq.TeamB)
-			matchQueue = append(matchQueue, mq)
+		if history, err = s.loadHistory(sessionID); err != nil {
+			return errJSON(c, 500, err.Error())
 		}
 	}
 
@@ -117,6 +59,7 @@ func (s *Server) handleState(c *fiber.Ctx) error {
 		Courts:     courts,
 		Players:    players,
 		MatchQueue: matchQueue,
+		History:    history,
 		Now:        nowMs(),
 		IsAdmin:    isAdmin,
 	}
@@ -128,6 +71,113 @@ func (s *Server) handleState(c *fiber.Ctx) error {
 		resp.Summary = sum
 	}
 	return c.JSON(resp)
+}
+
+func (s *Server) loadPlayers(sessionID string, cfg Config) ([]StatePlayer, error) {
+	rows, err := s.db.Query(`
+		SELECT sp.id, sp.roster_player_id, rp.name, rp.skill, rp.avatar_seed,
+		       sp.status, sp.checked_in_at, sp.waiting_since, sp.games_played, sp.shuttles_used, sp.paid, sp.note
+		FROM session_players sp
+		JOIN roster_players rp ON rp.id = sp.roster_player_id
+		WHERE sp.session_id = ?
+		ORDER BY sp.checked_in_at`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	players := []StatePlayer{}
+	for rows.Next() {
+		var p StatePlayer
+		var paid int
+		if err := rows.Scan(&p.ID, &p.RosterPlayerID, &p.Name, &p.Skill, &p.AvatarSeed,
+			&p.Status, &p.CheckedInAt, &p.WaitingSince, &p.GamesPlayed, &p.ShuttlesUsed, &paid, &p.Note); err != nil {
+			return nil, err
+		}
+		p.Paid = paid == 1
+		p.Total = cfg.playerTotal(p.ShuttlesUsed)
+		players = append(players, p)
+	}
+	return players, nil
+}
+
+func (s *Server) loadCourts(sessionID string) ([]StateCourt, error) {
+	courts := []StateCourt{}
+	crows, err := s.db.Query(`SELECT id, label, status FROM courts WHERE session_id = ? ORDER BY created_at`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer crows.Close()
+	for crows.Next() {
+		var ct StateCourt
+		if err := crows.Scan(&ct.ID, &ct.Label, &ct.Status); err != nil {
+			return nil, err
+		}
+		courts = append(courts, ct)
+	}
+	grows, err := s.db.Query(`SELECT id, court_id, team_a, team_b, started_at FROM games WHERE session_id = ? AND ended_at IS NULL`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer grows.Close()
+	gamesByCourt := map[string]*StateGame{}
+	for grows.Next() {
+		var g StateGame
+		var courtID, teamA, teamB string
+		if err := grows.Scan(&g.ID, &courtID, &teamA, &teamB, &g.StartedAt); err != nil {
+			return nil, err
+		}
+		json.Unmarshal([]byte(teamA), &g.TeamA)
+		json.Unmarshal([]byte(teamB), &g.TeamB)
+		gamesByCourt[courtID] = &g
+	}
+	for i := range courts {
+		courts[i].Game = gamesByCourt[courts[i].ID]
+	}
+	return courts, nil
+}
+
+func (s *Server) loadMatchQueue(sessionID string) ([]MatchQueueItem, error) {
+	rows, err := s.db.Query(`SELECT id, team_a, team_b, created_at FROM match_queue WHERE session_id = ? ORDER BY created_at`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	queue := []MatchQueueItem{}
+	for rows.Next() {
+		var mq MatchQueueItem
+		var ta, tb string
+		if err := rows.Scan(&mq.ID, &ta, &tb, &mq.CreatedAt); err != nil {
+			return nil, err
+		}
+		json.Unmarshal([]byte(ta), &mq.TeamA)
+		json.Unmarshal([]byte(tb), &mq.TeamB)
+		queue = append(queue, mq)
+	}
+	return queue, nil
+}
+
+func (s *Server) loadHistory(sessionID string) ([]HistoryGame, error) {
+	rows, err := s.db.Query(`
+		SELECT g.id, COALESCE(c.label, ''), g.team_a, g.team_b, g.started_at, g.ended_at, g.shuttles_used
+		FROM games g LEFT JOIN courts c ON c.id = g.court_id
+		WHERE g.session_id = ? AND g.ended_at IS NOT NULL
+		ORDER BY g.ended_at DESC`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	history := []HistoryGame{}
+	for rows.Next() {
+		var h HistoryGame
+		var ta, tb string
+		if err := rows.Scan(&h.ID, &h.CourtLabel, &ta, &tb, &h.StartedAt, &h.EndedAt, &h.ShuttlesUsed); err != nil {
+			return nil, err
+		}
+		json.Unmarshal([]byte(ta), &h.TeamA)
+		json.Unmarshal([]byte(tb), &h.TeamB)
+		history = append(history, h)
+	}
+	return history, nil
 }
 
 func (s *Server) buildSummary(sr *sessionRow, players []StatePlayer) (*Summary, error) {

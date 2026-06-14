@@ -3,9 +3,8 @@ import { QRCodeSVG } from 'qrcode.react'
 import { api, adminUrl } from '../api'
 import { fmtBaht, useSessionState } from '../hooks'
 import ConfigForm from '../components/ConfigForm'
-import CourtsPanel from '../components/CourtsPanel'
 import MatchBuilderCard from '../components/MatchBuilderCard'
-import MatchQueueList from '../components/MatchQueueList'
+import QueuePanel from '../components/QueuePanel'
 import Modal from '../components/Modal'
 import PlayerTable from '../components/PlayerTable'
 import SummaryPanel from '../components/SummaryPanel'
@@ -40,6 +39,7 @@ export default function Dashboard({
 }) {
   const { state, error, refresh, serverNow } = useSessionState(sessionId, adminKey)
   const [toasts, setToasts] = useState<Toast[]>([])
+  const [tab, setTab] = useState<'dashboard' | 'queue'>('dashboard')
   const [builderA, setBuilderA] = useState<string[]>([])
   const [builderB, setBuilderB] = useState<string[]>([])
   const [endGameTarget, setEndGameTarget] = useState<string | null>(null) // gameId
@@ -130,14 +130,15 @@ export default function Dashboard({
       pushToast('เพิ่มลงคิวเกมแล้ว', 'info')
     })
 
-  // "ขอ idea" → suggest → directly to queue
+  // "ขอ idea" → fill the builder with a suggestion; the organizer reviews and
+  // presses "เพิ่มลงคิว" to confirm (no auto-add).
   const handleSuggest = () =>
     run(async () => {
       const sug = await api.suggest(sessionId, adminKey)
-      await api.addToMatchQueue(sessionId, adminKey, sug.teamA, sug.teamB)
-      clearBuilder()
+      setBuilderA(sug.teamA)
+      setBuilderB(sug.teamB)
       const names = (ids: string[]) => ids.map((id) => playersById.get(id)?.name ?? '?').join(' + ')
-      pushToast(`💡 เพิ่มในคิว: A: ${names(sug.teamA)} vs B: ${names(sug.teamB)}`, 'info')
+      pushToast(`💡 idea: A: ${names(sug.teamA)} vs B: ${names(sug.teamB)} — กด "เพิ่มลงคิว" เพื่อยืนยัน`, 'info')
     })
 
   const startFromQueue = (mqId: string, courtId: string) =>
@@ -178,84 +179,102 @@ export default function Dashboard({
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-4 grid gap-4 lg:grid-cols-[260px_1fr]">
-        {/* Left: QR + summary */}
-        <div className="space-y-4">
-          <div className="rounded-2xl bg-white p-4 shadow-sm text-center">
-            <div className="text-sm font-semibold text-gray-700 mb-2">สแกนดูบอร์ดสด 📱</div>
-            <div className="flex justify-center">
-              <QRCodeSVG value={publicUrl} size={180} marginSize={1} />
-            </div>
-            <p className="mt-2 text-xs text-gray-400">ให้นักตีสแกนดูคิว/ยอดของตัวเอง</p>
-          </div>
-          {state.summary && <SummaryPanel summary={state.summary} config={state.session.config} />}
+      {/* Tab nav */}
+      <div className="mx-auto max-w-6xl px-4 pt-4">
+        <div className="flex gap-1 rounded-xl bg-gray-200/70 p-1 text-sm font-medium">
+          <button
+            onClick={() => setTab('dashboard')}
+            className={`flex-1 rounded-lg py-2 transition-colors ${tab === 'dashboard' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            แดชบอร์ด
+          </button>
+          <button
+            onClick={() => setTab('queue')}
+            className={`flex-1 rounded-lg py-2 transition-colors ${tab === 'queue' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            คิว{state.matchQueue.length > 0 && <span className="ml-1.5 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] text-emerald-700">{state.matchQueue.length}</span>}
+          </button>
         </div>
+      </div>
 
-        {/* Main column */}
-        <div className="space-y-4">
-          {!open && (
-            <div className="rounded-2xl bg-gray-800 px-4 py-3 text-sm text-white">
-              ก๊วนวันนี้ปิดแล้ว — ยังติ๊กจ่ายเงินได้ และบอร์ดสาธารณะยังเปิดดูได้
+      <main className="mx-auto max-w-6xl px-4 py-4">
+        {!open && (
+          <div className="mb-4 rounded-2xl bg-gray-800 px-4 py-3 text-sm text-white">
+            ก๊วนวันนี้ปิดแล้ว — ยังติ๊กจ่ายเงินได้ และบอร์ดสาธารณะยังเปิดดูได้
+          </div>
+        )}
+
+        {tab === 'dashboard' && (
+          <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
+            {/* Left: QR + summary */}
+            <div className="space-y-4">
+              <div className="rounded-2xl bg-white p-4 shadow-sm text-center">
+                <div className="text-sm font-semibold text-gray-700 mb-2">สแกนดูบอร์ดสด 📱</div>
+                <div className="flex justify-center">
+                  <QRCodeSVG value={publicUrl} size={180} marginSize={1} />
+                </div>
+                <p className="mt-2 text-xs text-gray-400">ให้นักตีสแกนดูคิว/ยอดของตัวเอง</p>
+              </div>
+              {state.summary && <SummaryPanel summary={state.summary} config={state.session.config} />}
             </div>
-          )}
 
-          <CourtsPanel
-            courts={state.courts}
-            playersById={playersById}
-            sessionOpen={open}
-            serverNow={serverNow}
-            onEndGame={(gameId) => { setEndGameShuttles(1); setEndGameTarget(gameId) }}
-            onCloseCourt={(courtId) => { if (confirm('ปิดสนามนี้?')) run(() => api.patchCourt(courtId, adminKey, 'closed')) }}
-            onAddCourt={() => run(() => api.addCourt(sessionId, adminKey))}
-          />
+            {/* Right: players */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="font-semibold text-gray-700">ผู้เล่น ({state.players.length})</h2>
+                {open && (
+                  <button onClick={() => setShowCheckin(true)}
+                    className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700">
+                    + เช็คอิน
+                  </button>
+                )}
+              </div>
 
-          {open && (
-            <MatchBuilderCard
-              players={state.players}
-              teamA={builderA}
-              teamB={builderB}
-              onToggleA={toggleA}
-              onToggleB={toggleB}
-              onAddToQueue={addToQueue}
-              onSuggest={handleSuggest}
-              onClear={clearBuilder}
-              busy={busy}
-            />
-          )}
+              <PlayerTable
+                players={state.players}
+                serverNow={serverNow}
+                sessionOpen={open}
+                waitAlertMinutes={state.session.config.waitAlertMinutes}
+                onTogglePaid={(p) => run(() => api.patchPlayer(p.id, adminKey, { paid: !p.paid }))}
+                onCheckout={(p) => setCheckoutTarget(p)}
+                onEditShuttles={(p) => { setShuttleEditVal(p.shuttlesUsed); setShuttleEdit(p) }}
+              />
+            </div>
+          </div>
+        )}
 
-          <MatchQueueList
-            queue={state.matchQueue}
-            courts={state.courts}
-            playersById={playersById}
-            sessionOpen={open}
-            onStart={startFromQueue}
-            onCancel={cancelFromQueue}
-          />
-
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-gray-700">ผู้เล่น ({state.players.length})</h2>
+        {tab === 'queue' && (
+          <div className="space-y-4">
             {open && (
-              <button onClick={() => setShowCheckin(true)}
-                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700">
-                + เช็คอิน
-              </button>
+              <MatchBuilderCard
+                players={state.players}
+                teamA={builderA}
+                teamB={builderB}
+                serverNow={serverNow}
+                onToggleA={toggleA}
+                onToggleB={toggleB}
+                onAddToQueue={addToQueue}
+                onSuggest={handleSuggest}
+                onClear={clearBuilder}
+                busy={busy}
+              />
             )}
-          </div>
 
-          <PlayerTable
-            players={state.players}
-            serverNow={serverNow}
-            sessionOpen={open}
-            waitAlertMinutes={state.session.config.waitAlertMinutes}
-            teamA={builderA}
-            teamB={builderB}
-            onToggleA={toggleA}
-            onToggleB={toggleB}
-            onTogglePaid={(p) => run(() => api.patchPlayer(p.id, adminKey, { paid: !p.paid }))}
-            onCheckout={(p) => setCheckoutTarget(p)}
-            onEditShuttles={(p) => { setShuttleEditVal(p.shuttlesUsed); setShuttleEdit(p) }}
-          />
-        </div>
+            <QueuePanel
+              courts={state.courts}
+              queue={state.matchQueue}
+              history={state.history}
+              playersById={playersById}
+              sessionOpen={open}
+              serverNow={serverNow}
+              onStart={startFromQueue}
+              onCancel={cancelFromQueue}
+              onEndGame={(gameId) => { setEndGameShuttles(1); setEndGameTarget(gameId) }}
+              onCloseCourt={(courtId) => { if (confirm('ปิดสนามนี้?')) run(() => api.patchCourt(courtId, adminKey, 'closed')) }}
+              onAddCourt={() => run(() => api.addCourt(sessionId, adminKey))}
+            />
+          </div>
+        )}
       </main>
 
       {/* ---- modals ---- */}

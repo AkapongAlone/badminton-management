@@ -46,6 +46,16 @@ export interface StateGame {
   startedAt: number
 }
 
+export interface HistoryGame {
+  id: string
+  courtLabel: string
+  teamA: string[]
+  teamB: string[]
+  startedAt: number
+  endedAt: number
+  shuttlesUsed: number
+}
+
 export interface StateCourt {
   id: string
   label: string
@@ -84,6 +94,7 @@ export interface SessionState {
   courts: StateCourt[]
   players: StatePlayer[]
   matchQueue: MatchQueueItem[]
+  history: HistoryGame[]
   now: number
   isAdmin: boolean
   summary?: Summary

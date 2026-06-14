@@ -17,7 +17,26 @@
       "Bash(rm -f bm-test.db*)",
       "Bash(PORT=18080 DB_PATH=/tmp/bm-test.db /tmp/badminton-app)",
       "Bash(rm -f /tmp/bm-test.db /tmp/bm-test.db-wal /tmp/bm-test.db-shm; PORT=18080 DB_PATH=/tmp/bm-test.db /tmp/badminton-app)",
-      "Bash(bash /tmp/bm-smoke.sh)"
+      "Bash(bash /tmp/bm-smoke.sh)",
+      "Bash(echo \"---BUILD EXIT: $?---\")",
+      "Bash(gofmt -l suggest.go)",
+      "Bash(ls *_test.go)",
+      "Bash(go test *)",
+      "Bash(lsof -ti:8099)",
+      "Bash(xargs kill -9)",
+      "Bash(pkill -f \"exe/badminton\")",
+      "Bash(pkill -f \"go run\")",
+      "Bash(bash /tmp/smoke.sh)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(rm -f /tmp/smoke.sh /tmp/smoke.db /tmp/smoke.log /tmp/smoke.db-* 2>/dev/null; lsof -ti:8099 | xargs kill -9 2>/dev/null; pkill -f \"go run\" 2>/dev/null; pkill -f \"exe/badminton\" 2>/dev/null; echo \"cleaned\"; cd \"/Users/ek/Desktop/badminton management/badminton-management\" && git status --short)",
+      "Bash(bash /tmp/smoke2.sh)",
+      "Bash(rm -f /tmp/smoke2.sh /tmp/smoke2.db* /tmp/smoke2.log)",
+      "Bash(lsof -ti:8098)",
+      "Bash(lsof -ti:8097)",
+      "Bash(bash /tmp/smoke3.sh)",
+      "Bash(rm -f /tmp/smoke3.sh /tmp/smoke3.db* /tmp/smoke3.log)",
+      "Bash(lsof -ti:8096)",
+      "Bash(bash /tmp/dbg.sh)"
     ],
     "additionalDirectories": [
       "/tmp"
