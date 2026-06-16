@@ -4,8 +4,10 @@ import { api, adminUrl, loadAdmin, saveAdmin } from '../api'
 import Avatar from '../components/Avatar'
 import ConfigForm from '../components/ConfigForm'
 import Modal from '../components/Modal'
+import Logo from '../components/Logo'
+import SkillBadge from '../components/SkillBadge'
 import Dashboard from './Dashboard'
-import { SKILL_LABELS, skillLabel } from '../types'
+import { SKILL_LABELS, skillClass } from '../types'
 import type { GroupInfo, RosterPlayer } from '../types'
 
 export default function Admin() {
@@ -100,6 +102,7 @@ export default function Admin() {
 function Center({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center gap-3 p-4 text-gray-500">
+      <Logo size="md" className="mb-1" />
       {children}
     </div>
   )
@@ -145,8 +148,9 @@ function GroupHome({
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm">
         <div className="mx-auto max-w-3xl px-4 py-4 flex items-center gap-3">
-          <span className="text-2xl">🏸</span>
-          <h1 className="text-xl font-bold flex-1">{group.name}</h1>
+          <Logo size="md" />
+          <span className="text-gray-300">·</span>
+          <h1 className="text-xl font-bold flex-1 truncate">{group.name}</h1>
           <button
             onClick={() => {
               navigator.clipboard.writeText(adminUrl(group.id, adminKey))
@@ -215,7 +219,7 @@ function GroupHome({
               >
                 <Avatar name={r.name} seed={r.avatarSeed} size={9} />
                 <span className="flex-1 font-medium">{r.name}</span>
-                <span className="rounded bg-gray-100 px-2 py-0.5 text-xs">{skillLabel(r.skill)}</span>
+                <SkillBadge skill={r.skill} />
                 <span className="text-xs text-gray-300">แก้ไข</span>
               </button>
             ))}
@@ -244,7 +248,7 @@ function GroupHome({
         <RosterPlayerModal
           title="เพิ่มนักตี"
           initialName=""
-          initialSkill={3}
+          initialSkill={2}
           onClose={() => setShowAddPlayer(false)}
           onSubmit={async (name, skill) => {
             await api.addRoster(group.id, adminKey, name, skill)
@@ -303,15 +307,15 @@ function RosterPlayerModal({
           />
         </label>
         <div>
-          <span className="block text-sm font-medium text-gray-700 mb-1">มือ (ระดับฝีมือ)</span>
-          <div className="flex flex-wrap gap-1">
+          <span className="block text-sm font-medium text-gray-700 mb-1">มือ (ฝีมือ) — 1 อ่อน → 4 เก่ง</span>
+          <div className="flex flex-wrap gap-2">
             {SKILL_LABELS.map((label, i) => (
               <button
                 key={i}
                 type="button"
                 onClick={() => setSkill(i + 1)}
-                className={`rounded-lg px-2.5 py-1.5 text-xs font-medium ${
-                  skill === i + 1 ? 'bg-emerald-600 text-white' : 'border border-gray-300 text-gray-600'
+                className={`h-10 w-10 rounded-lg text-sm font-bold transition ${skillClass(i + 1)} ${
+                  skill === i + 1 ? 'ring-2 ring-offset-1 ring-gray-800' : 'opacity-40 hover:opacity-70'
                 }`}
               >
                 {label}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math"
 	"sort"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -68,7 +69,10 @@ func (s *Server) handleSuggest(c *fiber.Ctx) error {
 	}
 
 	sort.Slice(waiting, func(i, j int) bool { return waiting[i].WaitingSince < waiting[j].WaitingSince })
-	picked := buildFoursome(waiting, met)
+	// "exclude" carries the previous suggestion's player IDs so pressing "ขอ idea"
+	// again gives a fresh foursome instead of repeating the same four.
+	exclude := parseExcludeSet(c.Query("exclude"))
+	picked := buildFoursomeAvoiding(waiting, met, exclude)
 	teamA, teamB := bestSplit(picked, met)
 
 	return c.JSON(fiber.Map{
@@ -126,6 +130,58 @@ func buildFoursome(waiting []suggestCand, met metFunc) []suggestCand {
 		pool = append(pool[:bestIdx], pool[bestIdx+1:]...)
 	}
 	return picked
+}
+
+// buildFoursomeAvoiding returns the default foursome unless it exactly matches the
+// previous suggestion (exclude); in that case it rotates the anchor through the
+// next few longest-waiting players to surface a different fresh group, so pressing
+// "ขอ idea" again never hands back the same four.
+func buildFoursomeAvoiding(waiting []suggestCand, met metFunc, exclude map[string]bool) []suggestCand {
+	def := buildFoursome(waiting, met)
+	if !sameSet(def, exclude) {
+		return def
+	}
+	limit := len(waiting)
+	if limit > 6 {
+		limit = 6
+	}
+	for ai := 1; ai < limit; ai++ {
+		reordered := append([]suggestCand{waiting[ai]}, removeAt(waiting, ai)...)
+		if cand := buildFoursome(reordered, met); !sameSet(cand, exclude) {
+			return cand
+		}
+	}
+	return def
+}
+
+// parseExcludeSet turns a comma-separated player-id list into a set.
+func parseExcludeSet(q string) map[string]bool {
+	set := map[string]bool{}
+	for _, id := range strings.Split(q, ",") {
+		if id = strings.TrimSpace(id); id != "" {
+			set[id] = true
+		}
+	}
+	return set
+}
+
+// sameSet reports whether the foursome is exactly the set of IDs in exclude.
+func sameSet(cand []suggestCand, exclude map[string]bool) bool {
+	if len(exclude) != len(cand) {
+		return false
+	}
+	for _, c := range cand {
+		if !exclude[c.ID] {
+			return false
+		}
+	}
+	return true
+}
+
+// removeAt returns a copy of s with element i removed.
+func removeAt(s []suggestCand, i int) []suggestCand {
+	out := append([]suggestCand{}, s[:i]...)
+	return append(out, s[i+1:]...)
 }
 
 // bestSplit picks the 2v2 partition (anchor fixed on team A) that minimizes skill

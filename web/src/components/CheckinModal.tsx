@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import Avatar from './Avatar'
 import Modal from './Modal'
-import { SKILL_LABELS, skillLabel } from '../types'
+import SkillBadge from './SkillBadge'
+import { SKILL_LABELS, skillClass } from '../types'
 import type { RosterPlayer } from '../types'
 
 interface PendingPlayer {
@@ -33,7 +34,7 @@ export default function CheckinModal({
 }) {
   const [roster, setRoster] = useState<RosterPlayer[]>([])
   const [q, setQ] = useState('')
-  const [newSkill, setNewSkill] = useState(3)
+  const [newSkill, setNewSkill] = useState(2)
   const [pending, setPending] = useState<PendingPlayer[]>([])
   const [busy, setBusy] = useState(false)
 
@@ -65,7 +66,7 @@ export default function CheckinModal({
     if (!name) return
     setPending((prev) => [...prev, { key: `new-${Date.now()}`, name, skill: newSkill, avatarSeed: name, note: '' }])
     setQ('')
-    setNewSkill(3)
+    setNewSkill(2)
   }
 
   const removePending = (key: string) => setPending((prev) => prev.filter((p) => p.key !== key))
@@ -121,7 +122,7 @@ export default function CheckinModal({
             >
               <Avatar name={r.name} seed={r.avatarSeed} size={8} />
               <span className="flex-1 font-medium text-sm">{r.name}</span>
-              <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs">{skillLabel(r.skill)}</span>
+              <SkillBadge skill={r.skill} />
               <span className="text-emerald-600 text-xs font-medium">+ เพิ่ม</span>
             </button>
           ))}
@@ -134,13 +135,16 @@ export default function CheckinModal({
           <div className="text-sm font-medium">
             เพิ่มคนใหม่: <span className="text-emerald-700">{q.trim()}</span>
           </div>
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] text-gray-400">มือ:</span>
             {SKILL_LABELS.map((label, i) => (
               <button
                 key={i}
                 type="button"
                 onClick={() => setNewSkill(i + 1)}
-                className={`rounded-lg px-2 py-1 text-xs font-medium ${newSkill === i + 1 ? 'bg-emerald-600 text-white' : 'bg-white border border-gray-300 text-gray-600'}`}
+                className={`h-8 w-8 rounded-lg text-xs font-bold transition ${skillClass(i + 1)} ${
+                  newSkill === i + 1 ? 'ring-2 ring-offset-1 ring-gray-800' : 'opacity-40 hover:opacity-70'
+                }`}
               >
                 {label}
               </button>
@@ -165,7 +169,7 @@ export default function CheckinModal({
               <div className="flex-1 min-w-0 space-y-1">
                 <div className="flex items-center gap-1.5">
                   <span className="font-medium text-sm truncate">{p.name}</span>
-                  <span className="rounded bg-gray-200 px-1 py-0.5 text-[10px]">{skillLabel(p.skill)}</span>
+                  <SkillBadge skill={p.skill} size="xs" />
                   {!p.rosterPlayerId && <span className="rounded bg-blue-100 px-1 py-0.5 text-[10px] text-blue-700">ใหม่</span>}
                 </div>
                 <input

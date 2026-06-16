@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { api, adminUrl } from '../api'
 import { fmtBaht, useSessionState } from '../hooks'
@@ -10,6 +10,8 @@ import PlayerTable from '../components/PlayerTable'
 import SummaryPanel from '../components/SummaryPanel'
 import Toasts, { type Toast } from '../components/Toasts'
 import CheckinModal from '../components/CheckinModal'
+import AiSuggestModal from '../components/AiSuggestModal'
+import Logo from '../components/Logo'
 import type { StatePlayer } from '../types'
 
 let toastSeq = 1
@@ -50,6 +52,8 @@ export default function Dashboard({
   const [showCheckin, setShowCheckin] = useState(false)
   const [showConfig, setShowConfig] = useState(false)
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
+  const [showAi, setShowAi] = useState(false)
+  const [lastSuggestion, setLastSuggestion] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
 
   const pushToast = useCallback((message: string, kind: Toast['kind'] = 'info') => {
@@ -71,26 +75,6 @@ export default function Dashboard({
     }
   }
 
-  // Passive wait-time alerts
-  const stateRef = useRef(state)
-  stateRef.current = state
-  const alertedRef = useRef(new Set<string>())
-  useEffect(() => {
-    const t = setInterval(() => {
-      const st = stateRef.current
-      if (!st || st.session.status !== 'open') return
-      const threshold = st.session.config.waitAlertMinutes * 60_000
-      for (const p of st.players) {
-        if (p.status !== 'waiting') { alertedRef.current.delete(p.id); continue }
-        if (serverNow() - p.waitingSince >= threshold && !alertedRef.current.has(p.id)) {
-          alertedRef.current.add(p.id)
-          pushToast(`⏰ ${p.name} รอเกิน ${st.session.config.waitAlertMinutes} นาทีแล้ว`, 'alert')
-        }
-      }
-    }, 1000)
-    return () => clearInterval(t)
-  }, [pushToast, serverNow])
-
   if (error && !state) {
     return <div className="min-h-screen flex items-center justify-center text-gray-500">โหลดไม่สำเร็จ: {error}</div>
   }
@@ -102,6 +86,7 @@ export default function Dashboard({
   const playersById = new Map(state.players.map((p) => [p.id, p]))
   const checkedInRosterIds = new Set(state.players.map((p) => p.rosterPlayerId))
   const publicUrl = `${location.origin}/s/${sessionId}`
+  const unpaidCount = state.players.filter((p) => !p.paid).length
 
   // ---- match builder toggles ----
   const toggleA = (id: string) => {
@@ -131,15 +116,25 @@ export default function Dashboard({
     })
 
   // "ขอ idea" → fill the builder with a suggestion; the organizer reviews and
-  // presses "เพิ่มลงคิว" to confirm (no auto-add).
+  // presses "เพิ่มลงคิว" to confirm (no auto-add). We send the previous foursome as
+  // `exclude` so pressing again hands back a different group, not the same four.
   const handleSuggest = () =>
     run(async () => {
-      const sug = await api.suggest(sessionId, adminKey)
+      const sug = await api.suggest(sessionId, adminKey, lastSuggestion)
       setBuilderA(sug.teamA)
       setBuilderB(sug.teamB)
+      setLastSuggestion(sug.players)
       const names = (ids: string[]) => ids.map((id) => playersById.get(id)?.name ?? '?').join(' + ')
       pushToast(`💡 idea: A: ${names(sug.teamA)} vs B: ${names(sug.teamB)} — กด "เพิ่มลงคิว" เพื่อยืนยัน`, 'info')
     })
+
+  // "ขอไอเดียจาก AI" lives in its own modal (count + optional prompt → many matches).
+  const aiRequest = (count: number, prompt: string) =>
+    api.aiSuggest(sessionId, adminKey, { count, prompt })
+  const aiAddToQueue = async (teamA: string[], teamB: string[]) => {
+    await api.addToMatchQueue(sessionId, adminKey, teamA, teamB)
+    await refresh()
+  }
 
   const startFromQueue = (mqId: string, courtId: string) =>
     run(() => api.startFromMatchQueue(mqId, adminKey, courtId))
@@ -154,7 +149,9 @@ export default function Dashboard({
       <header className="bg-white shadow-sm">
         <div className="mx-auto max-w-6xl px-4 py-3 flex flex-wrap items-center gap-2">
           <button onClick={onBack} className="text-sm text-gray-400 hover:text-gray-600">←</button>
-          <h1 className="font-bold text-lg">{state.session.groupName}</h1>
+          <Logo size="sm" />
+          <span className="text-gray-300">·</span>
+          <h1 className="font-bold text-lg truncate">{state.session.groupName}</h1>
           <span className="text-sm text-gray-400">{state.session.date}</span>
           <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${open ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-600'}`}>
             {open ? 'เปิดอยู่' : 'ปิดแล้ว'}
@@ -199,8 +196,20 @@ export default function Dashboard({
 
       <main className="mx-auto max-w-6xl px-4 py-4">
         {!open && (
-          <div className="mb-4 rounded-2xl bg-gray-800 px-4 py-3 text-sm text-white">
-            ก๊วนวันนี้ปิดแล้ว — ยังติ๊กจ่ายเงินได้ และบอร์ดสาธารณะยังเปิดดูได้
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl bg-gray-800 px-4 py-3 text-sm text-white">
+            <span className="flex-1">ก๊วนวันนี้ปิดแล้ว — ยังติ๊กจ่ายเงินได้ และบอร์ดสาธารณะยังเปิดดูได้</span>
+            {unpaidCount > 0 && (
+              <button
+                disabled={busy}
+                onClick={() => {
+                  if (confirm(`ทำเครื่องหมายว่า "จ่ายแล้ว" ทั้งหมด ${unpaidCount} คน?`))
+                    run(() => api.payAll(sessionId, adminKey))
+                }}
+                className="shrink-0 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                จ่ายแล้วทั้งหมด ({unpaidCount})
+              </button>
+            )}
           </div>
         )}
 
@@ -255,6 +264,7 @@ export default function Dashboard({
                 onToggleB={toggleB}
                 onAddToQueue={addToQueue}
                 onSuggest={handleSuggest}
+                onAiSuggest={() => setShowAi(true)}
                 onClear={clearBuilder}
                 busy={busy}
               />
@@ -337,6 +347,15 @@ export default function Dashboard({
           onClose={() => setShowCheckin(false)}
           onDone={refresh}
           onError={onError}
+        />
+      )}
+
+      {showAi && (
+        <AiSuggestModal
+          playersById={playersById}
+          onRequest={aiRequest}
+          onAddToQueue={aiAddToQueue}
+          onClose={() => setShowAi(false)}
         />
       )}
 

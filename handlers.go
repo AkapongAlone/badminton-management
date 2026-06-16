@@ -227,6 +227,20 @@ func (s *Server) closeSession(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"ok": true})
 }
 
+// payAllPlayers marks every player in the session as paid in one tap — handy after
+// closing the group once everyone has settled up. The paid flag stays editable
+// after close (invariant 5), so this works whether the session is open or closed.
+func (s *Server) payAllPlayers(c *fiber.Ctx) error {
+	sr, ok := s.sessionAuth(c, c.Params("id"))
+	if !ok {
+		return nil
+	}
+	if _, err := s.db.Exec(`UPDATE session_players SET paid = 1 WHERE session_id = ?`, sr.ID); err != nil {
+		return errJSON(c, 500, err.Error())
+	}
+	return c.JSON(fiber.Map{"ok": true})
+}
+
 // ---------- Players (check-in / checkout / patch) ----------
 
 func (s *Server) checkIn(c *fiber.Ctx) error {
@@ -253,8 +267,8 @@ func (s *Server) checkIn(c *fiber.Ctx) error {
 		if body.Name == "" {
 			return errJSON(c, 400, "name is required")
 		}
-		if body.Skill < 1 || body.Skill > 7 {
-			return errJSON(c, 400, "skill must be 1-7")
+		if body.Skill < 1 || body.Skill > 4 {
+			return errJSON(c, 400, "skill must be 1-4")
 		}
 		rosterID = newID()
 		if _, err := s.db.Exec(`INSERT INTO roster_players (id, group_id, name, skill, avatar_seed) VALUES (?,?,?,?,?)`,
@@ -614,8 +628,8 @@ func (s *Server) addRosterPlayer(c *fiber.Ctx) error {
 	if body.Name == "" {
 		return errJSON(c, 400, "name is required")
 	}
-	if body.Skill < 1 || body.Skill > 7 {
-		return errJSON(c, 400, "skill must be 1-7")
+	if body.Skill < 1 || body.Skill > 4 {
+		return errJSON(c, 400, "skill must be 1-4")
 	}
 	id := newID()
 	if _, err := s.db.Exec(`INSERT INTO roster_players (id, group_id, name, skill, avatar_seed) VALUES (?,?,?,?,?)`,
@@ -655,8 +669,8 @@ func (s *Server) patchRosterPlayer(c *fiber.Ctx) error {
 		}
 	}
 	if body.Skill != nil {
-		if *body.Skill < 1 || *body.Skill > 7 {
-			return errJSON(c, 400, "skill must be 1-7")
+		if *body.Skill < 1 || *body.Skill > 4 {
+			return errJSON(c, 400, "skill must be 1-4")
 		}
 		if _, err := s.db.Exec(`UPDATE roster_players SET skill = ? WHERE id = ?`, *body.Skill, id); err != nil {
 			return errJSON(c, 500, err.Error())

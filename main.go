@@ -29,7 +29,7 @@ func main() {
 	}
 	s := &Server{db: db}
 
-	app := fiber.New(fiber.Config{AppName: "badminton-session-manager"})
+	app := fiber.New(fiber.Config{AppName: "AekWong"})
 
 	api := app.Group("/api")
 	api.Post("/groups", s.createGroup)
@@ -42,9 +42,11 @@ func main() {
 	api.Get("/sessions/:id/state", s.handleState)
 	api.Patch("/sessions/:id/config", s.patchSessionConfig)
 	api.Post("/sessions/:id/close", s.closeSession)
+	api.Post("/sessions/:id/pay-all", s.payAllPlayers)
 	api.Post("/sessions/:id/players", s.checkIn)
 	api.Post("/sessions/:id/courts", s.addCourt)
 	api.Get("/sessions/:id/suggest", s.handleSuggest)
+	api.Post("/sessions/:id/ai-suggest", s.handleAISuggest)
 
 	api.Post("/players/:id/checkout", s.checkoutPlayer)
 	api.Patch("/players/:id", s.patchPlayer)
@@ -67,7 +69,7 @@ func main() {
 		MaxAge:       60,
 	}))
 
-	addr := ":" + env("PORT", "8080")
+	addr := ":" + env("PORT", "8000")
 	log.Printf("listening on %s", addr)
 	log.Fatal(app.Listen(addr))
 }

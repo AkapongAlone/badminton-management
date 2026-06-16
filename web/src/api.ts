@@ -1,4 +1,4 @@
-import type { Config, GroupInfo, RosterPlayer, SessionState, Suggestion } from './types'
+import type { AiSuggestion, Config, GroupInfo, RosterPlayer, SessionState, Suggestion } from './types'
 
 export class ApiError extends Error {
   status: number
@@ -31,6 +31,7 @@ export const api = {
   patchSessionConfig: (sessionId: string, key: string, config: Config) =>
     http('PATCH', `/api/sessions/${sessionId}/config`, config, key),
   closeSession: (sessionId: string, key: string) => http('POST', `/api/sessions/${sessionId}/close`, {}, key),
+  payAll: (sessionId: string, key: string) => http('POST', `/api/sessions/${sessionId}/pay-all`, {}, key),
   getState: (sessionId: string, key?: string) =>
     http<SessionState>('GET', `/api/sessions/${sessionId}/state`, undefined, key),
   checkIn: (sessionId: string, key: string, body: { rosterPlayerId?: string; name?: string; skill?: number; note?: string }) =>
@@ -47,8 +48,15 @@ export const api = {
     http<{ gameId: string }>('POST', `/api/courts/${courtId}/games`, { teamA, teamB }, key),
   endGame: (gameId: string, key: string, shuttlesUsed: number) =>
     http('POST', `/api/games/${gameId}/end`, { shuttlesUsed }, key),
-  suggest: (sessionId: string, key: string) =>
-    http<Suggestion>('GET', `/api/sessions/${sessionId}/suggest`, undefined, key),
+  suggest: (sessionId: string, key: string, exclude?: string[]) =>
+    http<Suggestion>(
+      'GET',
+      `/api/sessions/${sessionId}/suggest${exclude && exclude.length ? `?exclude=${exclude.join(',')}` : ''}`,
+      undefined,
+      key,
+    ),
+  aiSuggest: (sessionId: string, key: string, body: { count: number; prompt?: string }) =>
+    http<AiSuggestion>('POST', `/api/sessions/${sessionId}/ai-suggest`, body, key),
   addToMatchQueue: (sessionId: string, key: string, teamA: string[], teamB: string[]) =>
     http<{ matchQueueId: string }>('POST', `/api/sessions/${sessionId}/match-queue`, { teamA, teamB }, key),
   removeFromMatchQueue: (mqId: string, key: string) =>

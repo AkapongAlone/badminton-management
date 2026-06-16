@@ -16,7 +16,7 @@ RUN CGO_ENABLED=0 go build -ldflags='-s -w' -o /badminton .
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates
 WORKDIR /data
-ENV DB_PATH=/data/badminton.db PORT=8080
-EXPOSE 8080
+ENV DB_PATH=/data/badminton.db PORT=8000
+EXPOSE 8000
 COPY --from=build /badminton /usr/local/bin/badminton
 CMD ["badminton"]

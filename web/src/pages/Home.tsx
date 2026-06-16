@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, loadAdmin, saveAdmin } from '../api'
 import ConfigForm from '../components/ConfigForm'
+import Logo from '../components/Logo'
 import type { Config } from '../types'
 
 const DEFAULT_CONFIG: Config = {
@@ -44,8 +45,8 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        <div className="text-center mb-6">
-          <div className="text-4xl mb-2">🏸</div>
+        <div className="flex flex-col items-center text-center mb-6">
+          <Logo size="lg" className="mb-3" />
           <h1 className="text-2xl font-bold">สร้างก๊วนแบด</h1>
           <p className="text-gray-500 text-sm mt-1">ตั้งค่าเริ่มต้นครั้งเดียว ใช้เปิดก๊วนได้ทุกวัน</p>
         </div>

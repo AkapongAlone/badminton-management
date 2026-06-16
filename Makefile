@@ -1,6 +1,6 @@
 .PHONY: start dev build web clean
 
-# Run both backend (:8080) and frontend dev server (:5173) in parallel
+# Run both backend (:8000) and frontend dev server (:5173) in parallel
 start:
 	@trap 'kill 0' INT; \
 	go run . & \
@@ -23,7 +23,7 @@ web:
 web-install:
 	cd web && npm install
 
-# Run frontend dev server (proxy /api → :8080)
+# Run frontend dev server (proxy /api → :8000)
 web-dev:
 	cd web && npm run dev
 

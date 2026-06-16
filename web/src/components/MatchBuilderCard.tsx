@@ -1,7 +1,17 @@
+import { useState } from 'react'
 import { fmtElapsed } from '../hooks'
 import Avatar from './Avatar'
-import { skillLabel } from '../types'
+import SkillBadge from './SkillBadge'
 import type { StatePlayer } from '../types'
+
+type SortKey = 'default' | 'name' | 'skill' | 'wait' | 'games'
+const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  { key: 'default', label: 'เริ่มต้น' },
+  { key: 'name', label: 'ชื่อ' },
+  { key: 'skill', label: 'มือ' },
+  { key: 'wait', label: 'รอนาน' },
+  { key: 'games', label: 'เกมน้อย' },
+]
 
 // Self-contained match builder for the queue tab: pick waiting players into team
 // A / B from the picker below, then "เพิ่มลงคิว" to append to the queue (you can
@@ -16,6 +26,7 @@ export default function MatchBuilderCard({
   onToggleB,
   onAddToQueue,
   onSuggest,
+  onAiSuggest,
   onClear,
   busy,
 }: {
@@ -27,9 +38,12 @@ export default function MatchBuilderCard({
   onToggleB: (id: string) => void
   onAddToQueue: () => void
   onSuggest: () => void
+  onAiSuggest: () => void
   onClear: () => void
   busy?: boolean
 }) {
+  const [query, setQuery] = useState('')
+  const [sortKey, setSortKey] = useState<SortKey>('default')
   const byId = new Map(players.map((p) => [p.id, p]))
   const canQueue = teamA.length === 2 && teamB.length === 2
   const aFull = teamA.length >= 2
@@ -41,12 +55,24 @@ export default function MatchBuilderCard({
   // its players are free; that's enforced when starting, not here. Checked-out
   // players have gone home, so they're excluded.
   const statusRank = { waiting: 0, playing: 1, checked_out: 2 }
+  const term = query.trim().toLowerCase()
   const selectable = players
-    .filter((p) => p.status !== 'checked_out')
+    .filter((p) => p.status !== 'checked_out' && (!term || p.name.toLowerCase().includes(term)))
     .sort((a, b) => {
-      if (statusRank[a.status] !== statusRank[b.status]) return statusRank[a.status] - statusRank[b.status]
-      if (a.status === 'waiting') return a.waitingSince - b.waitingSince
-      return a.checkedInAt - b.checkedInAt
+      switch (sortKey) {
+        case 'name':
+          return a.name.localeCompare(b.name, 'th')
+        case 'skill':
+          return b.skill - a.skill // เก่ง → อ่อน
+        case 'wait':
+          return a.waitingSince - b.waitingSince // รอนานสุดก่อน
+        case 'games':
+          return a.gamesPlayed - b.gamesPlayed // เล่นน้อยสุดก่อน
+        default:
+          if (statusRank[a.status] !== statusRank[b.status]) return statusRank[a.status] - statusRank[b.status]
+          if (a.status === 'waiting') return a.waitingSince - b.waitingSince
+          return a.checkedInAt - b.checkedInAt
+      }
     })
 
   const Slot = ({ id, team, onRemove }: { id: string; team: 'A' | 'B'; onRemove: () => void }) => {
@@ -71,13 +97,20 @@ export default function MatchBuilderCard({
     <div className="rounded-2xl bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between mb-3">
         <h2 className="font-semibold text-gray-700">จัดคู่</h2>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={onSuggest}
             disabled={busy}
             className="rounded-lg border border-amber-400 px-3 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50"
           >
             💡 ขอ idea
+          </button>
+          <button
+            onClick={onAiSuggest}
+            disabled={busy}
+            className="rounded-lg bg-amber-500 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-600 disabled:opacity-50"
+          >
+            🤖 ขอไอเดียจาก AI
           </button>
           {(teamA.length > 0 || teamB.length > 0) && (
             <button
@@ -121,10 +154,37 @@ export default function MatchBuilderCard({
         <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
           เลือกผู้เล่น ({selectable.length})
         </div>
+
+        {/* filter + sort */}
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="ค้นหาชื่อ…"
+            className="min-w-0 flex-1 rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+          <div className="flex flex-wrap gap-1">
+            {SORT_OPTIONS.map((o) => (
+              <button
+                key={o.key}
+                type="button"
+                onClick={() => setSortKey(o.key)}
+                className={`rounded-lg px-2 py-1 text-[11px] font-medium ${
+                  sortKey === o.key ? 'bg-gray-800 text-white' : 'border border-gray-300 text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {selectable.length === 0 ? (
-          <p className="py-2 text-center text-sm text-gray-400">ยังไม่มีผู้เล่น — เช็คอินก่อนในแท็บแดชบอร์ด</p>
+          <p className="py-2 text-center text-sm text-gray-400">
+            {term ? 'ไม่พบผู้เล่นตามที่ค้นหา' : 'ยังไม่มีผู้เล่น — เช็คอินก่อนในแท็บแดชบอร์ด'}
+          </p>
         ) : (
-          <div className="space-y-1">
+          <div className="max-h-[26rem] space-y-1 overflow-y-auto pr-1">
             {selectable.map((p) => {
               const selA = teamA.includes(p.id)
               const selB = teamB.includes(p.id)
@@ -136,7 +196,8 @@ export default function MatchBuilderCard({
                 >
                   <Avatar name={p.name} seed={p.avatarSeed} size={7} />
                   <span className="flex-1 min-w-0 truncate text-sm font-medium">{p.name}</span>
-                  <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-600">{skillLabel(p.skill)}</span>
+                  <span className="hidden sm:inline tabular-nums text-[10px] text-gray-400 w-9 text-right">{p.gamesPlayed} เกม</span>
+                  <SkillBadge skill={p.skill} size="xs" />
                   {playing ? (
                     <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] text-blue-700">กำลังเล่น</span>
                   ) : (

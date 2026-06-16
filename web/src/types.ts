@@ -113,9 +113,35 @@ export interface Suggestion {
   teamB: string[]
 }
 
-// Thai casual skill ranks, index = skill - 1
-export const SKILL_LABELS = ['มือหน้าบ้าน', 'N', 'NB', 'BG', 'B', 'C', 'C+ขึ้นไป']
+export interface AiMatch {
+  teamA: string[]
+  teamB: string[]
+}
+
+export interface AiSuggestion {
+  matches: AiMatch[]
+  note?: string
+}
+
+// Skill is a 1-4 ladder from weakest (1) to strongest (4). Index = skill - 1.
+export const SKILL_MIN = 1
+export const SKILL_MAX = 4
+export const SKILL_LABELS = ['1', '2', '3', '4']
 
 export function skillLabel(skill: number): string {
   return SKILL_LABELS[skill - 1] ?? `${skill}`
+}
+
+// One distinct, saturated colour per level — filled badges with white text so they
+// stay legible on both the light admin pages and the dark public board (never blend
+// into the background). Index = skill - 1.
+const SKILL_CLASSES = [
+  'bg-emerald-500 text-white', // 1
+  'bg-sky-500 text-white',     // 2
+  'bg-orange-500 text-white',  // 3
+  'bg-rose-600 text-white',    // 4
+]
+
+export function skillClass(skill: number): string {
+  return SKILL_CLASSES[skill - 1] ?? 'bg-gray-500 text-white'
 }

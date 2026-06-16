@@ -3,7 +3,8 @@ import { useParams } from 'react-router-dom'
 import { fmtBaht, fmtElapsed, useSessionState } from '../hooks'
 import Avatar from '../components/Avatar'
 import Modal from '../components/Modal'
-import { skillLabel } from '../types'
+import Logo from '../components/Logo'
+import SkillBadge from '../components/SkillBadge'
 import type { StatePlayer } from '../types'
 
 // Public read-only board, reached via the QR on the admin dashboard.
@@ -29,12 +30,16 @@ export default function Board() {
     .sort((a, b) => a.waitingSince - b.waitingSince)
   const queuePos = (id: string) => waiting.findIndex((p) => p.id === id) + 1
 
+  // Viewers only see who's still in play — waiting or on a court. People who've
+  // checked out (gone home) are hidden from the public board.
   const order = { waiting: 0, playing: 1, checked_out: 2 }
-  const sorted = [...state.players].sort((a, b) => {
-    if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status]
-    if (a.status === 'waiting') return a.waitingSince - b.waitingSince
-    return a.checkedInAt - b.checkedInAt
-  })
+  const sorted = [...state.players]
+    .filter((p) => p.status === 'waiting' || p.status === 'playing')
+    .sort((a, b) => {
+      if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status]
+      if (a.status === 'waiting') return a.waitingSince - b.waitingSince
+      return a.checkedInAt - b.checkedInAt
+    })
 
   // keep the focused player's data fresh across polls
   const focused = focus ? playersById.get(focus.id) ?? null : null
@@ -42,7 +47,8 @@ export default function Board() {
   return (
     <div className="min-h-screen bg-gray-900 text-white pb-10">
       <header className="px-4 py-4 text-center">
-        <h1 className="text-xl font-bold">🏸 {state.session.groupName}</h1>
+        <div className="mb-2 flex justify-center"><Logo size="md" light /></div>
+        <h1 className="text-xl font-bold">{state.session.groupName}</h1>
         <p className="text-sm text-gray-400">
           {state.session.date} ·{' '}
           <span className={open ? 'text-emerald-400' : 'text-gray-500'}>{open ? 'กำลังเล่น' : 'จบแล้ว'}</span>
@@ -97,7 +103,7 @@ export default function Board() {
 
         {/* All players */}
         <section>
-          <h2 className="mb-2 text-sm font-semibold text-gray-400">ผู้เล่นทั้งหมด ({state.players.length}) — แตะชื่อตัวเองเพื่อดูยอด</h2>
+          <h2 className="mb-2 text-sm font-semibold text-gray-400">ผู้เล่น ({sorted.length}) — แตะชื่อตัวเองเพื่อดูยอด</h2>
           <div className="overflow-x-auto rounded-xl bg-gray-800">
             <table className="w-full text-sm whitespace-nowrap">
               <thead>
@@ -147,7 +153,7 @@ export default function Board() {
               <Avatar name={focused.name} seed={focused.avatarSeed} size={16} />
             </div>
             <div className="text-xl font-bold">{focused.name}</div>
-            <div className="text-sm text-gray-500">มือ {skillLabel(focused.skill)}</div>
+            <div className="flex items-center justify-center gap-1.5 text-sm text-gray-500">มือ <SkillBadge skill={focused.skill} /></div>
             <div className="text-sm">
               {focused.status === 'waiting' && (
                 <>
