@@ -12,7 +12,7 @@ import Toasts, { type Toast } from '../components/Toasts'
 import CheckinModal from '../components/CheckinModal'
 import AiSuggestModal from '../components/AiSuggestModal'
 import Logo from '../components/Logo'
-import type { StatePlayer } from '../types'
+import type { AiMatch, StatePlayer } from '../types'
 
 let toastSeq = 1
 
@@ -129,8 +129,8 @@ export default function Dashboard({
     })
 
   // "ขอไอเดียจาก AI" lives in its own modal (count + optional prompt → many matches).
-  const aiRequest = (count: number, prompt: string) =>
-    api.aiSuggest(sessionId, adminKey, { count, prompt })
+  const aiRequest = (count: number, prompt: string, avoid?: AiMatch[]) =>
+    api.aiSuggest(sessionId, adminKey, { count, prompt, avoid })
   const aiAddToQueue = async (teamA: string[], teamB: string[]) => {
     await api.addToMatchQueue(sessionId, adminKey, teamA, teamB)
     await refresh()
@@ -354,6 +354,7 @@ export default function Dashboard({
       {showAi && (
         <AiSuggestModal
           playersById={playersById}
+          maxPairs={Math.floor(state.players.filter((p) => p.status === 'waiting').length / 4)}
           onRequest={aiRequest}
           onAddToQueue={aiAddToQueue}
           onClose={() => setShowAi(false)}

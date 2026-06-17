@@ -131,6 +131,20 @@ function GroupHome({
   }, [group.id, adminKey])
   useEffect(loadRoster, [loadRoster])
 
+  const deletePlayer = async (r: RosterPlayer) => {
+    if (!confirm(`ลบ "${r.name}" ออกจากทะเบียน?`)) return
+    setBusy(true)
+    try {
+      await api.deleteRoster(r.id, adminKey)
+      setMsg(`ลบ ${r.name} แล้ว`)
+      loadRoster()
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const openSession = async (config: GroupInfo['config'], courts: number) => {
     setBusy(true)
     try {
@@ -212,16 +226,31 @@ function GroupHome({
           </div>
           <div className="divide-y divide-gray-50">
             {roster.map((r) => (
-              <button
+              <div
                 key={r.id}
-                onClick={() => setEditPlayer(r)}
-                className="flex w-full items-center gap-3 py-2.5 text-left hover:bg-gray-50 rounded-lg px-2"
+                className="flex items-center gap-3 rounded-lg px-2 py-2.5 hover:bg-gray-50"
               >
-                <Avatar name={r.name} seed={r.avatarSeed} size={9} />
-                <span className="flex-1 font-medium">{r.name}</span>
-                <SkillBadge skill={r.skill} />
-                <span className="text-xs text-gray-300">แก้ไข</span>
-              </button>
+                <button
+                  onClick={() => setEditPlayer(r)}
+                  data-testid={`roster-edit-${r.id}`}
+                  className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                >
+                  <Avatar name={r.name} seed={r.avatarSeed} size={9} />
+                  <span className="flex-1 truncate font-medium">{r.name}</span>
+                  <SkillBadge skill={r.skill} />
+                  <span className="text-xs text-gray-300">แก้ไข</span>
+                </button>
+                <button
+                  onClick={() => deletePlayer(r)}
+                  disabled={busy}
+                  title="ลบนักตี"
+                  aria-label={`ลบ ${r.name}`}
+                  data-testid={`roster-delete-${r.id}`}
+                  className="shrink-0 rounded-lg p-1.5 text-gray-300 hover:bg-red-50 hover:text-red-500 disabled:opacity-50"
+                >
+                  🗑
+                </button>
+              </div>
             ))}
             {roster.length === 0 && (
               <p className="py-6 text-center text-sm text-gray-400">

@@ -21,16 +21,46 @@ const aiSuggestSystem = `You are an experienced badminton session organizer arra
 You are given a list of players currently waiting. Each has a skill rating (1-7, higher = stronger),
 how many games they have already played today, and how many minutes they have been waiting.
 
-Arrange up to the requested number of balanced 2v2 matches. Unless the organizer's extra
-instructions say otherwise, follow these principles:
+A match has two sides: teamA and teamB. The two players inside teamA are PARTNERS playing on the
+SAME side; the two in teamB are their OPPONENTS on the other side. So teamA = [X, Y] means X and Y
+play together as a pair AGAINST the teamB pair.
+
+Arrange up to the requested number of balanced 2v2 matches. Follow these DEFAULT principles only
+when the organizer hasn't said otherwise:
 - Prioritize players who have waited the longest and played the fewest games.
 - Within each match, split the four players so the two teams are as even in skill as possible.
-- Avoid putting together or against each other people who have already played together a lot.
-- Each player may appear in AT MOST ONE match.
+- Avoid making partners (or repeatedly opposing) people who have already played together a lot.
+- By default each player appears in at most one match.
+
+The organizer's extra instructions (if any) are ABSOLUTE and OVERRIDE every default principle above,
+including skill balance, waiting priority, and the one-match-per-player rule. Satisfy them EXACTLY,
+even if it produces lopsided or repetitive matches — the organizer's wishes always win. The four
+players WITHIN a single match must still be four different people (no one on both teams or twice on
+the same team), but the SAME player MAY appear in multiple matches when the instruction calls for it.
+
+How to read the organizer's instructions (they are written in Thai):
+- "ให้ X คู่กับ Y" / "X จับคู่กับ Y" / "X เป็นคู่กับ Y" / "X partner with Y" means X and Y are
+  PARTNERS: put BOTH of them on the SAME side of one match — i.e. teamA = [X, Y] (or teamB = [X, Y]).
+  This is the most common request and you MUST NOT put them on opposite sides.
+- "อย่าให้ X คู่กับ Y" / "ห้าม X คู่ Y" means X and Y must NOT be partners (they may be opponents,
+  or in different matches, or one may sit out).
+- "X เจอกับ Y" / "X เล่นกับ Y" / "X ปะทะ Y" means they are OPPONENTS: X in teamA, Y in teamB (or vice versa).
+- Identify players by their number. Two players may share the same display name — they are
+  DIFFERENT people, so never treat them as interchangeable.
+- If an instruction names a player and several waiting players share that name, apply it to each
+  of those players where possible.
+- The words "ตลอด" / "ทุกคู่" / "ทุกเกม" / "every match" mean the instruction applies to EVERY
+  match you generate, not just one. So "ให้ X คู่กับ Y ตลอด" with 3 matches requested means X and Y
+  must be partners (same side) in ALL 3 matches — repeat them in every match, and fill the opposing
+  side with other players. Reusing X and Y across matches here is REQUIRED, not a mistake.
+- If a constraint genuinely cannot be satisfied (e.g. there aren't enough other players to fill the
+  opponents), produce as many matches as you can and explain briefly in the Thai note why.
 
 Respond with ONLY a JSON object — no markdown fences, no text outside the JSON — in exactly this shape:
 {"matches":[{"teamA":[<playerNumber>,<playerNumber>],"teamB":[<playerNumber>,<playerNumber>]}],"note":"<one short sentence in Thai explaining the idea>"}
-Use the player numbers from the list. Provide at most the requested number of matches.`
+Use the player numbers from the list. Provide at most the requested number of matches.
+Example: organizer says "ให้ 3 คู่กับ 7 ตลอด" and asks for 2 matches → return 2 matches, each with
+teamA = [3, 7] (or teamB = [3, 7]) and two different opponents in the other slot of each match.`
 
 // handleAISuggest asks Claude to propose one or more 2v2 matches from the waiting
 // players, optionally guided by a free-text prompt from the organizer. The result
@@ -52,6 +82,12 @@ func (s *Server) handleAISuggest(c *fiber.Ctx) error {
 	var body struct {
 		Prompt string `json:"prompt"`
 		Count  int    `json:"count"`
+		// Avoid carries pairings from earlier suggestions this round ("ขอใหม่อีกครั้ง")
+		// so we can nudge the model toward a fresh arrangement. Player IDs.
+		Avoid []struct {
+			TeamA []string `json:"teamA"`
+			TeamB []string `json:"teamB"`
+		} `json:"avoid"`
 	}
 	c.BodyParser(&body)
 	count := body.Count
@@ -75,6 +111,24 @@ func (s *Server) handleAISuggest(c *fiber.Ctx) error {
 		return errJSON(c, 500, err.Error())
 	}
 
+	// Players are referenced by name in the organizer's free-text instructions, but
+	// names aren't unique (two "Aek"s). Build a unique label per player so the model
+	// can't conflate same-named people — duplicates get a "(คนที่ N)" suffix.
+	nameTotal := map[string]int{}
+	for _, p := range players {
+		nameTotal[p.Name]++
+	}
+	nameSeen := map[string]int{}
+	labels := make([]string, len(players))
+	for i, p := range players {
+		if nameTotal[p.Name] > 1 {
+			nameSeen[p.Name]++
+			labels[i] = fmt.Sprintf("%s (คนที่ %d)", p.Name, nameSeen[p.Name])
+		} else {
+			labels[i] = p.Name
+		}
+	}
+
 	// Build the player roster + prior-matchup context for the model.
 	now := nowMs()
 	var sb strings.Builder
@@ -82,14 +136,14 @@ func (s *Server) handleAISuggest(c *fiber.Ctx) error {
 	for i, p := range players {
 		waitMin := (now - p.WaitingSince) / 60000
 		fmt.Fprintf(&sb, "%d. %s — skill %d, เล่นไปแล้ว %d เกม, รอมา %d นาที\n",
-			i+1, p.Name, p.Skill, p.GamesPlayed, waitMin)
+			i+1, labels[i], p.Skill, p.GamesPlayed, waitMin)
 	}
 	metLines := []string{}
 	for i := 0; i < len(players); i++ {
 		for j := i + 1; j < len(players); j++ {
 			if n := faced[players[i].ID][players[j].ID]; n > 0 {
 				metLines = append(metLines, fmt.Sprintf("- %s กับ %s เคยอยู่คนละทีมกันมาแล้ว %d ครั้ง",
-					players[i].Name, players[j].Name, n))
+					labels[i], labels[j], n))
 			}
 		}
 	}
@@ -98,6 +152,36 @@ func (s *Server) handleAISuggest(c *fiber.Ctx) error {
 		sb.WriteString(strings.Join(metLines, "\n"))
 		sb.WriteString("\n")
 	}
+
+	// "ขอใหม่อีกครั้ง" passes the earlier suggestions back so we can ask for a
+	// different arrangement — but only as a soft preference, never at the expense of
+	// the organizer's explicit instructions below.
+	labelByID := make(map[string]string, len(players))
+	for i, p := range players {
+		labelByID[p.ID] = labels[i]
+	}
+	sideNames := func(ids []string) string {
+		parts := []string{}
+		for _, id := range ids {
+			if lbl, ok := labelByID[id]; ok {
+				parts = append(parts, lbl)
+			}
+		}
+		return strings.Join(parts, " + ")
+	}
+	avoidLines := []string{}
+	for _, m := range body.Avoid {
+		a, b := sideNames(m.TeamA), sideNames(m.TeamB)
+		if a != "" && b != "" {
+			avoidLines = append(avoidLines, fmt.Sprintf("- %s ปะทะ %s", a, b))
+		}
+	}
+	if len(avoidLines) > 0 {
+		sb.WriteString("\nรอบก่อนเพิ่งเสนอคู่พวกนี้ไปแล้ว พยายามจัดให้ต่างออกไป (สลับคู่หูหรือคู่ต่อสู้) เท่าที่ทำได้ โดยไม่ขัดกับคำสั่งของหัวหน้าก๊วนด้านล่าง:\n")
+		sb.WriteString(strings.Join(avoidLines, "\n"))
+		sb.WriteString("\n")
+	}
+
 	if extra := strings.TrimSpace(body.Prompt); extra != "" {
 		fmt.Fprintf(&sb, "\nคำสั่งเพิ่มเติมจากหัวหน้าก๊วน (ให้ความสำคัญเป็นพิเศษ): %s\n", extra)
 	}
@@ -139,9 +223,12 @@ func (s *Server) handleAISuggest(c *fiber.Ctx) error {
 		return errJSON(c, 502, "AI ตอบกลับมาในรูปแบบที่อ่านไม่ได้ ลองใหม่อีกครั้ง")
 	}
 
-	// Map player numbers back to IDs, dropping anything malformed: each match must
-	// be 2v2 with distinct players, and no player may appear in more than one match.
-	used := map[int]bool{}
+	// Map player numbers back to IDs, dropping anything malformed: each match must be
+	// 2v2 with four DISTINCT players within that match. We intentionally do NOT enforce
+	// uniqueness ACROSS matches — the organizer may instruct the same pair to play every
+	// match (e.g. "Aek คู่กับ Cherry ตลอด"), and their wishes take priority over the
+	// default "one match per player". The queue already supports a player in several
+	// pending matches, and starting one checks the players are free.
 	matches := []fiber.Map{}
 	toIDs := func(idxs []int) []string {
 		r := make([]string, 0, len(idxs))
@@ -158,7 +245,7 @@ func (s *Server) handleAISuggest(c *fiber.Ctx) error {
 		seen := map[int]bool{}
 		valid := true
 		for _, idx := range all {
-			if idx < 1 || idx > len(players) || seen[idx] || used[idx] {
+			if idx < 1 || idx > len(players) || seen[idx] {
 				valid = false
 				break
 			}
@@ -166,9 +253,6 @@ func (s *Server) handleAISuggest(c *fiber.Ctx) error {
 		}
 		if !valid {
 			continue
-		}
-		for _, idx := range all {
-			used[idx] = true
 		}
 		matches = append(matches, fiber.Map{"teamA": toIDs(m.TeamA), "teamB": toIDs(m.TeamB)})
 	}

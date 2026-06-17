@@ -10,6 +10,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/filesystem"
+	"github.com/joho/godotenv"
 )
 
 //go:embed all:web/dist
@@ -23,6 +24,10 @@ func env(key, fallback string) string {
 }
 
 func main() {
+	// Load .env if present so ANTHROPIC_API_KEY etc. are available. Missing file is
+	// fine — in production the vars are set in the real environment instead.
+	_ = godotenv.Load()
+
 	db, err := openDB(env("DB_PATH", "badminton.db"))
 	if err != nil {
 		log.Fatal(err)
@@ -38,6 +43,7 @@ func main() {
 	api.Get("/groups/:id/roster", s.listRoster)
 	api.Post("/groups/:id/roster", s.addRosterPlayer)
 	api.Patch("/roster/:id", s.patchRosterPlayer)
+	api.Delete("/roster/:id", s.deleteRosterPlayer)
 
 	api.Get("/sessions/:id/state", s.handleState)
 	api.Patch("/sessions/:id/config", s.patchSessionConfig)

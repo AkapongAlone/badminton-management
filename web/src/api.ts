@@ -1,4 +1,4 @@
-import type { AiSuggestion, Config, GroupInfo, RosterPlayer, SessionState, Suggestion } from './types'
+import type { AiMatch, AiSuggestion, Config, GroupInfo, RosterPlayer, SessionState, Suggestion } from './types'
 
 export class ApiError extends Error {
   status: number
@@ -55,7 +55,7 @@ export const api = {
       undefined,
       key,
     ),
-  aiSuggest: (sessionId: string, key: string, body: { count: number; prompt?: string }) =>
+  aiSuggest: (sessionId: string, key: string, body: { count: number; prompt?: string; avoid?: AiMatch[] }) =>
     http<AiSuggestion>('POST', `/api/sessions/${sessionId}/ai-suggest`, body, key),
   addToMatchQueue: (sessionId: string, key: string, teamA: string[], teamB: string[]) =>
     http<{ matchQueueId: string }>('POST', `/api/sessions/${sessionId}/match-queue`, { teamA, teamB }, key),
@@ -69,6 +69,8 @@ export const api = {
     http<{ id: string }>('POST', `/api/groups/${groupId}/roster`, { name, skill }, key),
   patchRoster: (rosterId: string, key: string, body: { name?: string; skill?: number }) =>
     http('PATCH', `/api/roster/${rosterId}`, body, key),
+  deleteRoster: (rosterId: string, key: string) =>
+    http('DELETE', `/api/roster/${rosterId}`, undefined, key),
 }
 
 // ---- admin credentials in localStorage (losing the link = losing access) ----

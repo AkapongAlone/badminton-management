@@ -86,6 +86,9 @@ func openDB(path string) (*sql.DB, error) {
 	}
 	// Idempotent migrations for columns added after initial deploy.
 	db.Exec(`ALTER TABLE session_players ADD COLUMN note TEXT NOT NULL DEFAULT ''`)
+	// archived_at: epoch-ms when a roster player was soft-deleted (NULL = active).
+	// Soft delete keeps the row so session_players + game history stay intact.
+	db.Exec(`ALTER TABLE roster_players ADD COLUMN archived_at INTEGER`)
 	return db, nil
 }
 

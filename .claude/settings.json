@@ -36,7 +36,12 @@
       "Bash(bash /tmp/smoke3.sh)",
       "Bash(rm -f /tmp/smoke3.sh /tmp/smoke3.db* /tmp/smoke3.log)",
       "Bash(lsof -ti:8096)",
-      "Bash(bash /tmp/dbg.sh)"
+      "Bash(bash /tmp/dbg.sh)",
+      "Bash(ls -la .env*)",
+      "Bash(ls -la web/.env*)",
+      "Bash(grep -i \"dotenv\\\\|godotenv\" go.mod)",
+      "Bash(grep -nA3 \"^dev:\\\\|^start:\\\\|^run:\" Makefile)",
+      "Bash(go get *)"
     ],
     "additionalDirectories": [
       "/tmp"

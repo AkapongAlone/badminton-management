@@ -589,7 +589,7 @@ func (s *Server) listRoster(c *fiber.Ctx) error {
 		return err
 	}
 	q := strings.TrimSpace(c.Query("q"))
-	query := `SELECT id, group_id, name, skill, avatar_seed FROM roster_players WHERE group_id = ?`
+	query := `SELECT id, group_id, name, skill, avatar_seed FROM roster_players WHERE group_id = ? AND archived_at IS NULL`
 	args := []any{groupID}
 	if q != "" {
 		query += ` AND name LIKE ?`
@@ -612,6 +612,23 @@ func (s *Server) listRoster(c *fiber.Ctx) error {
 	return c.JSON(players)
 }
 
+// rosterNameTaken reports whether another roster player in the group already uses
+// this name, compared case-insensitively (COLLATE NOCASE). Pass excludeID to skip a
+// player (e.g. the one being renamed) so saving an unchanged name isn't rejected.
+func (s *Server) rosterNameTaken(groupID, name, excludeID string) (bool, error) {
+	var found string
+	err := s.db.QueryRow(
+		`SELECT id FROM roster_players WHERE group_id = ? AND name = ? COLLATE NOCASE AND id != ? AND archived_at IS NULL LIMIT 1`,
+		groupID, name, excludeID).Scan(&found)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (s *Server) addRosterPlayer(c *fiber.Ctx) error {
 	groupID := c.Params("id")
 	if ok, err := s.groupAuth(c, groupID); !ok {
@@ -630,6 +647,11 @@ func (s *Server) addRosterPlayer(c *fiber.Ctx) error {
 	}
 	if body.Skill < 1 || body.Skill > 4 {
 		return errJSON(c, 400, "skill must be 1-4")
+	}
+	if taken, err := s.rosterNameTaken(groupID, body.Name, ""); err != nil {
+		return errJSON(c, 500, err.Error())
+	} else if taken {
+		return errJSON(c, 409, "มีผู้เล่นชื่อนี้อยู่แล้ว")
 	}
 	id := newID()
 	if _, err := s.db.Exec(`INSERT INTO roster_players (id, group_id, name, skill, avatar_seed) VALUES (?,?,?,?,?)`,
@@ -664,6 +686,11 @@ func (s *Server) patchRosterPlayer(c *fiber.Ctx) error {
 		if name == "" {
 			return errJSON(c, 400, "name cannot be empty")
 		}
+		if taken, err := s.rosterNameTaken(groupID, name, id); err != nil {
+			return errJSON(c, 500, err.Error())
+		} else if taken {
+			return errJSON(c, 409, "มีผู้เล่นชื่อนี้อยู่แล้ว")
+		}
 		if _, err := s.db.Exec(`UPDATE roster_players SET name = ? WHERE id = ?`, name, id); err != nil {
 			return errJSON(c, 500, err.Error())
 		}
@@ -675,6 +702,40 @@ func (s *Server) patchRosterPlayer(c *fiber.Ctx) error {
 		if _, err := s.db.Exec(`UPDATE roster_players SET skill = ? WHERE id = ?`, *body.Skill, id); err != nil {
 			return errJSON(c, 500, err.Error())
 		}
+	}
+	return c.JSON(fiber.Map{"ok": true})
+}
+
+// deleteRosterPlayer removes a player from the group's registry. If the player has
+// never been checked into a session the row is deleted outright. Once they have
+// session_players (and game history through it), a hard delete would orphan that
+// history, so we soft-delete instead: set archived_at so they drop out of the roster
+// and check-in lists while their rows — and past games — stay intact.
+func (s *Server) deleteRosterPlayer(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var groupID string
+	err := s.db.QueryRow(`SELECT group_id FROM roster_players WHERE id = ?`, id).Scan(&groupID)
+	if err == sql.ErrNoRows {
+		return errJSON(c, 404, "roster player not found")
+	}
+	if err != nil {
+		return errJSON(c, 500, err.Error())
+	}
+	if ok, err := s.groupAuth(c, groupID); !ok {
+		return err
+	}
+	var refs int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM session_players WHERE roster_player_id = ?`, id).Scan(&refs); err != nil {
+		return errJSON(c, 500, err.Error())
+	}
+	if refs > 0 {
+		if _, err := s.db.Exec(`UPDATE roster_players SET archived_at = ? WHERE id = ?`, nowMs(), id); err != nil {
+			return errJSON(c, 500, err.Error())
+		}
+		return c.JSON(fiber.Map{"ok": true, "archived": true})
+	}
+	if _, err := s.db.Exec(`DELETE FROM roster_players WHERE id = ?`, id); err != nil {
+		return errJSON(c, 500, err.Error())
 	}
 	return c.JSON(fiber.Map{"ok": true})
 }
