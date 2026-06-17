@@ -257,6 +257,7 @@ export default function Dashboard({
             {open && (
               <MatchBuilderCard
                 players={state.players}
+                queue={state.matchQueue}
                 teamA={builderA}
                 teamB={builderB}
                 serverNow={serverNow}
