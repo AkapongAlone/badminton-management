@@ -5,3 +5,4 @@ web/dist/
 *.db-shm
 /badminton
 dist/
+.env
