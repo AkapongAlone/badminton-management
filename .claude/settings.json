@@ -41,7 +41,8 @@
       "Bash(ls -la web/.env*)",
       "Bash(grep -i \"dotenv\\\\|godotenv\" go.mod)",
       "Bash(grep -nA3 \"^dev:\\\\|^start:\\\\|^run:\" Makefile)",
-      "Bash(go get *)"
+      "Bash(go get *)",
+      "Bash(npx turbo *)"
     ],
     "additionalDirectories": [
       "/tmp"
