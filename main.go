@@ -39,6 +39,7 @@ func main() {
 	api := app.Group("/api")
 	api.Post("/groups", s.createGroup)
 	api.Get("/groups/:id", s.getGroup)
+	api.Get("/groups/:id/stats", s.getGroupStats)
 	api.Post("/groups/:id/sessions", s.createSession)
 	api.Get("/groups/:id/roster", s.listRoster)
 	api.Post("/groups/:id/roster", s.addRosterPlayer)
@@ -59,6 +60,7 @@ func main() {
 	api.Patch("/courts/:id", s.patchCourt)
 	api.Post("/courts/:id/games", s.startGame)
 	api.Post("/games/:id/end", s.endGame)
+	api.Patch("/games/:id/result", s.patchGameResult)
 
 	api.Post("/sessions/:id/match-queue", s.addToMatchQueue)
 	api.Delete("/match-queue/:id", s.removeFromMatchQueue)

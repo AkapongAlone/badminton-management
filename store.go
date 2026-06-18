@@ -89,6 +89,8 @@ func openDB(path string) (*sql.DB, error) {
 	// archived_at: epoch-ms when a roster player was soft-deleted (NULL = active).
 	// Soft delete keeps the row so session_players + game history stay intact.
 	db.Exec(`ALTER TABLE roster_players ADD COLUMN archived_at INTEGER`)
+	// result: 'A' (team A wins), 'B' (team B wins), 'draw', or NULL (not recorded).
+	db.Exec(`ALTER TABLE games ADD COLUMN result TEXT`)
 	return db, nil
 }
 

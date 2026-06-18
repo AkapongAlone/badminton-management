@@ -93,6 +93,20 @@ type HistoryGame struct {
 	StartedAt    int64    `json:"startedAt"`
 	EndedAt      int64    `json:"endedAt"`
 	ShuttlesUsed int      `json:"shuttlesUsed"`
+	Result       *string  `json:"result,omitempty"` // "A" | "B" | "draw" | nil
+}
+
+// PlayerStat is a per-roster-player win/loss/draw aggregate across all sessions.
+type PlayerStat struct {
+	RosterPlayerID string  `json:"rosterPlayerId"`
+	Name           string  `json:"name"`
+	Skill          int     `json:"skill"`
+	Games          int     `json:"games"`      // games with a recorded result
+	TotalGames     int     `json:"totalGames"` // all finished games (including unrecorded)
+	Wins           int     `json:"wins"`
+	Losses         int     `json:"losses"`
+	Draws          int     `json:"draws"`
+	WinRate        float64 `json:"winRate"` // wins / (wins+losses+draws), 0 if no recorded games
 }
 
 type StateCourt struct {

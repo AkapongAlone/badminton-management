@@ -545,7 +545,8 @@ func (s *Server) endGame(c *fiber.Ctx) error {
 		return errJSON(c, 409, "game already ended")
 	}
 	var body struct {
-		ShuttlesUsed *int `json:"shuttlesUsed"`
+		ShuttlesUsed *int    `json:"shuttlesUsed"`
+		Result       *string `json:"result"` // "A" | "B" | "draw" | nil (not recorded)
 	}
 	if err := c.BodyParser(&body); err != nil || body.ShuttlesUsed == nil {
 		return errJSON(c, 400, "shuttlesUsed is required")
@@ -553,6 +554,13 @@ func (s *Server) endGame(c *fiber.Ctx) error {
 	// Invariant 2: 0 is a normal, supported value.
 	if *body.ShuttlesUsed < 0 {
 		return errJSON(c, 400, "shuttlesUsed must be >= 0")
+	}
+	if body.Result != nil {
+		switch *body.Result {
+		case "A", "B", "draw": // valid
+		default:
+			return errJSON(c, 400, "result must be A, B, or draw")
+		}
 	}
 	var a, b []string
 	json.Unmarshal([]byte(teamA), &a)
@@ -564,7 +572,7 @@ func (s *Server) endGame(c *fiber.Ctx) error {
 		return errJSON(c, 500, err.Error())
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`UPDATE games SET ended_at = ?, shuttles_used = ? WHERE id = ?`, now, *body.ShuttlesUsed, gameID); err != nil {
+	if _, err := tx.Exec(`UPDATE games SET ended_at = ?, shuttles_used = ?, result = ? WHERE id = ?`, now, *body.ShuttlesUsed, body.Result, gameID); err != nil {
 		return errJSON(c, 500, err.Error())
 	}
 	for _, id := range all {
@@ -579,6 +587,183 @@ func (s *Server) endGame(c *fiber.Ctx) error {
 		return errJSON(c, 500, err.Error())
 	}
 	return c.JSON(fiber.Map{"ok": true})
+}
+
+// patchGameResult lets the admin correct the result of an already-ended game.
+// Body: { "result": "A" | "B" | "draw" | null }
+func (s *Server) patchGameResult(c *fiber.Ctx) error {
+	gameID := c.Params("id")
+	var sessionID string
+	var endedAt sql.NullInt64
+	err := s.db.QueryRow(`SELECT session_id, ended_at FROM games WHERE id = ?`, gameID).
+		Scan(&sessionID, &endedAt)
+	if err == sql.ErrNoRows {
+		return errJSON(c, 404, "game not found")
+	}
+	if err != nil {
+		return errJSON(c, 500, err.Error())
+	}
+	if !endedAt.Valid {
+		return errJSON(c, 409, "game hasn't ended yet")
+	}
+	if _, ok := s.sessionAuth(c, sessionID); !ok {
+		return nil
+	}
+	var body struct {
+		Result *string `json:"result"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return errJSON(c, 400, "invalid body")
+	}
+	if body.Result != nil {
+		switch *body.Result {
+		case "A", "B", "draw": // valid
+		default:
+			return errJSON(c, 400, "result must be A, B, or draw")
+		}
+	}
+	if _, err := s.db.Exec(`UPDATE games SET result = ? WHERE id = ?`, body.Result, gameID); err != nil {
+		return errJSON(c, 500, err.Error())
+	}
+	return c.JSON(fiber.Map{"ok": true})
+}
+
+// getGroupStats returns cumulative win/loss/draw stats for every roster player in
+// the group, computed across all sessions. Public — no admin key required.
+func (s *Server) getGroupStats(c *fiber.Ctx) error {
+	groupID := c.Params("id")
+
+	// All active roster players for this group.
+	rosterRows, err := s.db.Query(`
+		SELECT id, name, skill FROM roster_players
+		WHERE group_id = ? AND archived_at IS NULL
+		ORDER BY name COLLATE NOCASE`, groupID)
+	if err != nil {
+		return errJSON(c, 500, err.Error())
+	}
+	defer rosterRows.Close()
+
+	type rosterInfo struct{ Name string; Skill int }
+	rosterMap := map[string]rosterInfo{}
+	var rosterOrder []string
+	for rosterRows.Next() {
+		var id, name string
+		var skill int
+		if err := rosterRows.Scan(&id, &name, &skill); err != nil {
+			return errJSON(c, 500, err.Error())
+		}
+		rosterMap[id] = rosterInfo{name, skill}
+		rosterOrder = append(rosterOrder, id)
+	}
+
+	// Map session_player_id → roster_player_id across all sessions for this group.
+	spRows, err := s.db.Query(`
+		SELECT sp.id, sp.roster_player_id
+		FROM session_players sp
+		JOIN sessions s ON s.id = sp.session_id
+		WHERE s.group_id = ?`, groupID)
+	if err != nil {
+		return errJSON(c, 500, err.Error())
+	}
+	defer spRows.Close()
+	spToRoster := map[string]string{}
+	for spRows.Next() {
+		var spID, rID string
+		if err := spRows.Scan(&spID, &rID); err != nil {
+			return errJSON(c, 500, err.Error())
+		}
+		spToRoster[spID] = rID
+	}
+
+	// All finished games for this group.
+	gameRows, err := s.db.Query(`
+		SELECT g.team_a, g.team_b, g.result
+		FROM games g
+		JOIN sessions s ON s.id = g.session_id
+		WHERE s.group_id = ? AND g.ended_at IS NOT NULL`, groupID)
+	if err != nil {
+		return errJSON(c, 500, err.Error())
+	}
+	defer gameRows.Close()
+
+	type stat struct{ wins, losses, draws, games, totalGames int }
+	statMap := map[string]*stat{}
+	for _, id := range rosterOrder {
+		statMap[id] = &stat{}
+	}
+	for gameRows.Next() {
+		var taJSON, tbJSON string
+		var result sql.NullString
+		if err := gameRows.Scan(&taJSON, &tbJSON, &result); err != nil {
+			return errJSON(c, 500, err.Error())
+		}
+		var a, b []string
+		json.Unmarshal([]byte(taJSON), &a)
+		json.Unmarshal([]byte(tbJSON), &b)
+
+		for _, spID := range append(a, b...) {
+			if rID := spToRoster[spID]; rID != "" {
+				if st := statMap[rID]; st != nil {
+					st.totalGames++
+				}
+			}
+		}
+		if !result.Valid {
+			continue
+		}
+		for _, spID := range a {
+			if rID := spToRoster[spID]; rID != "" {
+				if st := statMap[rID]; st != nil {
+					st.games++
+					switch result.String {
+					case "A":
+						st.wins++
+					case "B":
+						st.losses++
+					case "draw":
+						st.draws++
+					}
+				}
+			}
+		}
+		for _, spID := range b {
+			if rID := spToRoster[spID]; rID != "" {
+				if st := statMap[rID]; st != nil {
+					st.games++
+					switch result.String {
+					case "A":
+						st.losses++
+					case "B":
+						st.wins++
+					case "draw":
+						st.draws++
+					}
+				}
+			}
+		}
+	}
+
+	out := make([]PlayerStat, 0, len(rosterOrder))
+	for _, id := range rosterOrder {
+		info := rosterMap[id]
+		st := statMap[id]
+		var winRate float64
+		if total := st.wins + st.losses + st.draws; total > 0 {
+			winRate = float64(st.wins) / float64(total)
+		}
+		out = append(out, PlayerStat{
+			RosterPlayerID: id,
+			Name:           info.Name,
+			Skill:          info.Skill,
+			Games:          st.games,
+			TotalGames:     st.totalGames,
+			Wins:           st.wins,
+			Losses:         st.losses,
+			Draws:          st.draws,
+			WinRate:        winRate,
+		})
+	}
+	return c.JSON(out)
 }
 
 // ---------- Roster ----------

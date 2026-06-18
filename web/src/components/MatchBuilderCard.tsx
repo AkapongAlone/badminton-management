@@ -177,6 +177,37 @@ export default function MatchBuilderCard({
         </div>
       </div>
 
+      {canQueue && (() => {
+        const skillA = teamA.reduce((s, id) => s + (byId.get(id)?.skill ?? 0), 0)
+        const skillB = teamB.reduce((s, id) => s + (byId.get(id)?.skill ?? 0), 0)
+        const diff = Math.abs(skillA - skillB)
+        const favoured = skillA === skillB ? null : skillA > skillB ? 'A' : 'B'
+        let label: string
+        let cls: string
+        if (diff === 0) {
+          label = 'สูสีมาก'; cls = 'bg-emerald-100 text-emerald-700'
+        } else if (diff <= 2) {
+          label = `ทีม ${favoured} ได้เปรียบนิดหน่อย`; cls = 'bg-amber-50 text-amber-700'
+        } else if (diff <= 4) {
+          label = `ทีม ${favoured} ได้เปรียบ`; cls = 'bg-orange-100 text-orange-700'
+        } else {
+          label = `ทีม ${favoured} ได้เปรียบชัดเจน`; cls = 'bg-red-100 text-red-700'
+        }
+        return (
+          <div className="mt-2.5 flex items-center gap-2 text-xs text-gray-500">
+            <span>
+              รวม skill{' '}
+              <span className="font-semibold text-emerald-700">{skillA}</span>
+              <span className="mx-1 text-gray-300">–</span>
+              <span className="font-semibold text-sky-700">{skillB}</span>
+            </span>
+            <span className={`rounded-full px-2 py-0.5 font-medium ${cls}`}>
+              {diff > 0 ? `${label} (+${diff})` : label}
+            </span>
+          </div>
+        )
+      })()}
+
       <button
         disabled={!canQueue || busy}
         onClick={onAddToQueue}

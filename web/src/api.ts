@@ -1,4 +1,4 @@
-import type { AiMatch, AiSuggestion, Config, GroupInfo, RosterPlayer, SessionState, Suggestion } from './types'
+import type { AiMatch, AiSuggestion, Config, GroupInfo, PlayerStat, RosterPlayer, SessionState, Suggestion } from './types'
 
 export class ApiError extends Error {
   status: number
@@ -46,8 +46,12 @@ export const api = {
     http('PATCH', `/api/courts/${courtId}`, { status }, key),
   startGame: (courtId: string, key: string, teamA: string[], teamB: string[]) =>
     http<{ gameId: string }>('POST', `/api/courts/${courtId}/games`, { teamA, teamB }, key),
-  endGame: (gameId: string, key: string, shuttlesUsed: number) =>
-    http('POST', `/api/games/${gameId}/end`, { shuttlesUsed }, key),
+  endGame: (gameId: string, key: string, shuttlesUsed: number, result?: 'A' | 'B' | 'draw' | null) =>
+    http('POST', `/api/games/${gameId}/end`, { shuttlesUsed, result: result ?? null }, key),
+  patchGameResult: (gameId: string, key: string, result: 'A' | 'B' | 'draw' | null) =>
+    http('PATCH', `/api/games/${gameId}/result`, { result }, key),
+  getGroupStats: (groupId: string) =>
+    http<PlayerStat[]>('GET', `/api/groups/${groupId}/stats`),
   suggest: (sessionId: string, key: string, exclude?: string[]) =>
     http<Suggestion>(
       'GET',

@@ -13,15 +13,17 @@ import (
 // meetings are expressed relative to it (roughly "how many minutes of extra
 // waiting would I trade to avoid this").
 const (
-	skillStepMinutes  = 10.0 // 1 skill rank apart ≈ 10 minutes of waiting
-	repeatPickMinutes = 12.0 // each prior meeting with the group ≈ 12 minutes
-	splitRepeatWeight = 3.0  // repeat opponents weighed against skill imbalance in the team split
+	skillStepMinutes   = 10.0 // 1 skill rank apart ≈ 10 minutes of waiting
+	repeatPickMinutes  = 12.0 // each prior meeting with the group ≈ 12 minutes
+	splitRepeatWeight  = 3.0  // repeat opponents weighed against skill imbalance in the team split
+	queuedMatchPenalty = 30.0 // each queued (not-yet-played) match ≈ 30 min of future play time
 )
 
 type suggestCand struct {
 	ID           string
 	Skill        int
 	WaitingSince int64
+	QueuedGames  int // matches already in the queue that include this player
 }
 
 // metFunc reports how many times two players have been on opposite teams.
@@ -55,6 +57,16 @@ func (s *Server) handleSuggest(c *fiber.Ctx) error {
 		return errJSON(c, 409, "ต้องมีผู้เล่นรออย่างน้อย 4 คน")
 	}
 
+	// Penalise players already booked into the queue so the suggestion prefers
+	// those with no upcoming games (the +n display on the picker reflects this).
+	qCounts, err := s.queuedMatchCounts(sr.ID)
+	if err != nil {
+		return errJSON(c, 500, err.Error())
+	}
+	for i := range waiting {
+		waiting[i].QueuedGames = qCounts[waiting[i].ID]
+	}
+
 	// Opponent history for this session: faced[x][y] = number of games in which
 	// x and y were on opposite teams. Symmetric.
 	faced, err := s.opponentHistory(sr.ID)
@@ -80,6 +92,31 @@ func (s *Server) handleSuggest(c *fiber.Ctx) error {
 		"teamA":   teamA,
 		"teamB":   teamB,
 	})
+}
+
+// queuedMatchCounts returns how many queued (not-yet-started) matches each player
+// is already booked into for this session. Used to penalise already-queued players
+// so the suggestion favours those with no upcoming games.
+func (s *Server) queuedMatchCounts(sessionID string) (map[string]int, error) {
+	rows, err := s.db.Query(`SELECT team_a, team_b FROM match_queue WHERE session_id = ?`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	counts := map[string]int{}
+	for rows.Next() {
+		var taJSON, tbJSON string
+		if err := rows.Scan(&taJSON, &tbJSON); err != nil {
+			return nil, err
+		}
+		var a, b []string
+		json.Unmarshal([]byte(taJSON), &a)
+		json.Unmarshal([]byte(tbJSON), &b)
+		for _, id := range append(a, b...) {
+			counts[id]++
+		}
+	}
+	return counts, nil
 }
 
 // waitingCandidates loads the session's waiting players with their skill.
@@ -121,7 +158,7 @@ func buildFoursome(waiting []suggestCand, met metFunc) []suggestCand {
 			for _, q := range picked {
 				repeats += met(p.ID, q.ID)
 			}
-			score := skillDiff*skillStepMinutes - waitMin + float64(repeats)*repeatPickMinutes // lower is better
+			score := skillDiff*skillStepMinutes - waitMin + float64(repeats)*repeatPickMinutes + float64(p.QueuedGames)*queuedMatchPenalty // lower is better
 			if score < bestScore {
 				bestScore, bestIdx = score, i
 			}

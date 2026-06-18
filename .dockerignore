@@ -1,0 +1,9 @@
+# Keep the build context small and avoid shipping local cruft into the image.
+web/node_modules
+web/dist
+*.db
+*.db-wal
+*.db-shm
+.env
+badminton
+.git

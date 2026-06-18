@@ -44,8 +44,10 @@ export default function Dashboard({
   const [tab, setTab] = useState<'dashboard' | 'queue'>('dashboard')
   const [builderA, setBuilderA] = useState<string[]>([])
   const [builderB, setBuilderB] = useState<string[]>([])
-  const [endGameTarget, setEndGameTarget] = useState<string | null>(null) // gameId
+  const [endGameTarget, setEndGameTarget] = useState<{ gameId: string; teamA: string[]; teamB: string[] } | null>(null)
   const [endGameShuttles, setEndGameShuttles] = useState(1)
+  const [endGameResult, setEndGameResult] = useState<'A' | 'B' | 'draw' | null>(null)
+  const [editResultTarget, setEditResultTarget] = useState<{ gameId: string; current: 'A' | 'B' | 'draw' | null } | null>(null)
   const [shuttleEdit, setShuttleEdit] = useState<StatePlayer | null>(null)
   const [shuttleEditVal, setShuttleEditVal] = useState(0)
   const [checkoutTarget, setCheckoutTarget] = useState<StatePlayer | null>(null)
@@ -85,6 +87,7 @@ export default function Dashboard({
   const open = state.session.status === 'open'
   const playersById = new Map(state.players.map((p) => [p.id, p]))
   const checkedInRosterIds = new Set(state.players.map((p) => p.rosterPlayerId))
+  const statsUrl = `/g/${groupId}/stats`
   const publicUrl = `${location.origin}/s/${sessionId}`
   const unpaidCount = state.players.filter((p) => !p.paid).length
 
@@ -157,6 +160,14 @@ export default function Dashboard({
             {open ? 'เปิดอยู่' : 'ปิดแล้ว'}
           </span>
           <div className="flex-1" />
+          <a
+            href={statsUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
+          >
+            📊 สถิติ
+          </a>
           <button
             onClick={() => { navigator.clipboard.writeText(adminUrl(groupId, adminKey)); pushToast('คัดลอกลิงก์แอดมินแล้ว') }}
             className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
@@ -280,7 +291,8 @@ export default function Dashboard({
               serverNow={serverNow}
               onStart={startFromQueue}
               onCancel={cancelFromQueue}
-              onEndGame={(gameId) => { setEndGameShuttles(1); setEndGameTarget(gameId) }}
+              onEndGame={(gameId, teamA, teamB) => { setEndGameShuttles(1); setEndGameResult(null); setEndGameTarget({ gameId, teamA, teamB }) }}
+              onEditResult={(gameId, current) => setEditResultTarget({ gameId, current })}
               onCloseCourt={(courtId) => { if (confirm('ปิดสนามนี้?')) run(() => api.patchCourt(courtId, adminKey, 'closed')) }}
               onAddCourt={() => run(() => api.addCourt(sessionId, adminKey))}
             />
@@ -290,21 +302,64 @@ export default function Dashboard({
 
       {/* ---- modals ---- */}
 
-      {endGameTarget && (
-        <Modal title="จบเกม — เปิดลูกใหม่ไปกี่ลูก?" onClose={() => setEndGameTarget(null)}>
-          <div className="space-y-4">
-            <ShuttleInput value={endGameShuttles} onChange={setEndGameShuttles} />
-            <p className="text-center text-xs text-gray-400">นับเฉพาะลูกที่เปิดใหม่ในเกมนี้ — ใช้ลูกเก่าต่อ = 0 ได้</p>
-            <button
-              disabled={busy}
-              onClick={() => { const id = endGameTarget; setEndGameTarget(null); run(() => api.endGame(id, adminKey, endGameShuttles)) }}
-              className="w-full rounded-lg bg-blue-600 py-2.5 font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              ยืนยันจบเกม
-            </button>
-          </div>
-        </Modal>
-      )}
+      {endGameTarget && (() => {
+        const t = endGameTarget
+        const nameList = (ids: string[]) => ids.map((id) => playersById.get(id)?.name ?? '?').join(' + ')
+        type Opt = { value: 'A' | 'B' | 'draw' | null; label: string; cls: string }
+        const opts: Opt[] = [
+          { value: 'A', label: 'ทีม A ชนะ', cls: 'border-emerald-400 bg-emerald-50 text-emerald-700' },
+          { value: 'draw', label: 'เสมอ', cls: 'border-gray-400 bg-gray-100 text-gray-600' },
+          { value: 'B', label: 'ทีม B ชนะ', cls: 'border-sky-400 bg-sky-50 text-sky-700' },
+          { value: null, label: 'ไม่บันทึก', cls: 'border-gray-300 text-gray-400' },
+        ]
+        return (
+          <Modal title="จบเกม" onClose={() => setEndGameTarget(null)}>
+            <div className="space-y-4">
+              <div className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm text-center space-y-0.5">
+                <div><span className="font-medium text-emerald-700">A:</span> {nameList(t.teamA)}</div>
+                <div className="text-xs text-gray-400">vs</div>
+                <div><span className="font-medium text-sky-700">B:</span> {nameList(t.teamB)}</div>
+              </div>
+
+              <div>
+                <p className="text-sm font-medium text-gray-700 mb-2">ผลการแข่งขัน</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {opts.map((o) => (
+                    <button
+                      key={String(o.value)}
+                      type="button"
+                      onClick={() => setEndGameResult(o.value)}
+                      className={`rounded-xl border-2 py-2 text-sm font-semibold transition-all ${
+                        endGameResult === o.value ? o.cls + ' ring-2 ring-offset-1 ring-current' : 'border-gray-200 text-gray-400 hover:border-gray-300'
+                      }`}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm font-medium text-gray-700 mb-2">เปิดลูกใหม่กี่ลูก?</p>
+                <ShuttleInput value={endGameShuttles} onChange={setEndGameShuttles} />
+                <p className="text-center text-xs text-gray-400 mt-1">ใช้ลูกเก่าต่อ = 0 ได้</p>
+              </div>
+
+              <button
+                disabled={busy}
+                onClick={() => {
+                  const { gameId } = t
+                  setEndGameTarget(null)
+                  run(() => api.endGame(gameId, adminKey, endGameShuttles, endGameResult))
+                }}
+                className="w-full rounded-lg bg-blue-600 py-2.5 font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                ยืนยันจบเกม
+              </button>
+            </div>
+          </Modal>
+        )
+      })()}
 
       {shuttleEdit && (
         <Modal title={`แก้จำนวนลูกของ ${shuttleEdit.name}`} onClose={() => setShuttleEdit(null)}>
@@ -371,6 +426,40 @@ export default function Dashboard({
           />
         </Modal>
       )}
+
+      {editResultTarget && (() => {
+        const t = editResultTarget
+        type Opt = { value: 'A' | 'B' | 'draw' | null; label: string }
+        const opts: Opt[] = [
+          { value: 'A', label: 'ทีม A ชนะ' },
+          { value: 'draw', label: 'เสมอ' },
+          { value: 'B', label: 'ทีม B ชนะ' },
+          { value: null, label: 'ล้างผล' },
+        ]
+        return (
+          <Modal title="แก้ผลการแข่งขัน" onClose={() => setEditResultTarget(null)}>
+            <div className="space-y-2">
+              {opts.map((o) => (
+                <button
+                  key={String(o.value)}
+                  disabled={busy}
+                  onClick={() => {
+                    setEditResultTarget(null)
+                    run(() => api.patchGameResult(t.gameId, adminKey, o.value))
+                  }}
+                  className={`w-full rounded-xl border-2 py-2.5 text-sm font-semibold transition-all disabled:opacity-50 ${
+                    t.current === o.value
+                      ? 'border-gray-800 bg-gray-800 text-white'
+                      : 'border-gray-200 text-gray-700 hover:border-gray-400'
+                  }`}
+                >
+                  {o.label}{t.current === o.value ? ' (ปัจจุบัน)' : ''}
+                </button>
+              ))}
+            </div>
+          </Modal>
+        )
+      })()}
 
       {showCloseConfirm && (
         <Modal title="ปิดก๊วนวันนี้?" onClose={() => setShowCloseConfirm(false)}>

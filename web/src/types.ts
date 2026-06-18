@@ -54,6 +54,19 @@ export interface HistoryGame {
   startedAt: number
   endedAt: number
   shuttlesUsed: number
+  result?: 'A' | 'B' | 'draw' | null
+}
+
+export interface PlayerStat {
+  rosterPlayerId: string
+  name: string
+  skill: number
+  games: number      // games with a recorded result
+  totalGames: number // all finished games
+  wins: number
+  losses: number
+  draws: number
+  winRate: number    // 0–1
 }
 
 export interface StateCourt {

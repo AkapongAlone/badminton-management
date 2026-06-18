@@ -1,4 +1,4 @@
-.PHONY: start dev build web clean
+.PHONY: start dev build web clean ngrok
 
 # Run both backend (:8000) and frontend dev server (:5173) in parallel
 start:
@@ -29,3 +29,12 @@ web-dev:
 
 clean:
 	rm -rf web/dist web/node_modules badminton *.db *.db-wal *.db-shm
+
+# Build (if needed) then run the production binary + ngrok tunnel on port 8000.
+# Prerequisite: ngrok installed (brew install ngrok/ngrok/ngrok) and ANTHROPIC_API_KEY set.
+# Usage:  ANTHROPIC_API_KEY=sk-ant-... make ngrok
+ngrok: build
+	@trap 'kill 0' INT; \
+	./badminton & \
+	sleep 1 && ngrok http 8000 & \
+	wait

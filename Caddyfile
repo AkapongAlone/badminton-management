@@ -1,0 +1,6 @@
+# Caddy reverse proxy with automatic HTTPS (Let's Encrypt).
+# $DOMAIN comes from the environment (set in docker-compose.yml). Caddy obtains and
+# renews the TLS cert on its own — nothing else to configure.
+{$DOMAIN} {
+	reverse_proxy app:8000
+}

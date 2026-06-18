@@ -15,6 +15,7 @@ export default function QueuePanel({
   onStart,
   onCancel,
   onEndGame,
+  onEditResult,
   onCloseCourt,
   onAddCourt,
 }: {
@@ -26,7 +27,8 @@ export default function QueuePanel({
   serverNow: () => number
   onStart: (mqId: string, courtId: string) => void
   onCancel: (mqId: string) => void
-  onEndGame: (gameId: string) => void
+  onEndGame: (gameId: string, teamA: string[], teamB: string[]) => void
+  onEditResult?: (gameId: string, current: 'A' | 'B' | 'draw' | null) => void
   onCloseCourt: (courtId: string) => void
   onAddCourt: () => void
 }) {
@@ -74,7 +76,7 @@ export default function QueuePanel({
                 </div>
                 {sessionOpen && (
                   <button
-                    onClick={() => onEndGame(c.game!.id)}
+                    onClick={() => onEndGame(c.game!.id, c.game!.teamA, c.game!.teamB)}
                     className="mt-2 w-full rounded-lg bg-blue-600 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
                   >
                     จบเกม
@@ -182,17 +184,39 @@ export default function QueuePanel({
             เล่นจบแล้ว <span className="text-gray-400 font-normal">({history.length})</span>
           </h2>
           <div className="max-h-72 overflow-y-auto divide-y divide-gray-50">
-            {history.map((g) => (
-              <div key={g.id} className="flex items-center gap-2 py-2 text-sm">
-                <div className="flex-1 min-w-0">
-                  <span className="text-gray-700">{g.teamA.map(name).join(' + ')}</span>
-                  <span className="mx-1.5 text-gray-300">vs</span>
-                  <span className="text-gray-700">{g.teamB.map(name).join(' + ')}</span>
+            {history.map((g) => {
+              const resultLabel =
+                g.result === 'A' ? 'A ชนะ' : g.result === 'B' ? 'B ชนะ' : g.result === 'draw' ? 'เสมอ' : null
+              const resultCls =
+                g.result === 'A' ? 'bg-emerald-100 text-emerald-700' :
+                g.result === 'B' ? 'bg-sky-100 text-sky-700' :
+                g.result === 'draw' ? 'bg-gray-100 text-gray-500' : ''
+              return (
+                <div key={g.id} className="flex items-center gap-2 py-2 text-sm">
+                  <div className="flex-1 min-w-0">
+                    <span className="text-gray-700">{g.teamA.map(name).join(' + ')}</span>
+                    <span className="mx-1.5 text-gray-300">vs</span>
+                    <span className="text-gray-700">{g.teamB.map(name).join(' + ')}</span>
+                  </div>
+                  {resultLabel ? (
+                    <button
+                      onClick={() => onEditResult?.(g.id, g.result ?? null)}
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${resultCls} ${onEditResult ? 'hover:opacity-70' : 'cursor-default'}`}
+                    >
+                      {resultLabel}
+                    </button>
+                  ) : onEditResult ? (
+                    <button
+                      onClick={() => onEditResult(g.id, null)}
+                      className="shrink-0 text-[11px] text-gray-300 hover:text-gray-500"
+                    >
+                      บันทึกผล
+                    </button>
+                  ) : null}
+                  <span className="shrink-0 text-[11px] tabular-nums text-gray-300 w-10 text-right">{clock(g.endedAt)}</span>
                 </div>
-                <span className="shrink-0 text-[11px] text-gray-400">{g.shuttlesUsed} ลูก</span>
-                <span className="shrink-0 text-[11px] tabular-nums text-gray-300 w-10 text-right">{clock(g.endedAt)}</span>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}

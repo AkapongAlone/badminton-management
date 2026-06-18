@@ -1,0 +1,44 @@
+# Run the badminton app on any Docker host (e.g. an Oracle Cloud Always Free VM)
+# behind Caddy for automatic HTTPS:
+#   export ANTHROPIC_API_KEY=sk-ant-...
+#   export DOMAIN=badminton.example.com      # must already point (DNS A record) at this VM's IP
+#   docker compose up -d --build
+#
+# Caddy fetches & renews a Let's Encrypt cert for $DOMAIN automatically, then proxies
+# to the app. App data lives in the "badminton-db" volume (DB_PATH=/data), and the TLS
+# certs live in "caddy-data" — both survive `docker compose down` and redeploys.
+#
+# No domain yet? Drop the caddy service and publish the app directly instead:
+#   app:  ports: ["80:8000"]   (HTTP only)
+services:
+  app:
+    build: .
+    restart: always
+    environment:
+      # Read from the host env; compose errors out loudly if it isn't set (no hardcoded secret).
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY before running}
+      # PORT and DB_PATH are already baked into the image (see Dockerfile).
+    volumes:
+      - badminton-db:/data
+    expose:
+      - "8000" # internal only — reachable by caddy on the compose network, not from outside
+
+  caddy:
+    image: caddy:2-alpine
+    restart: always
+    ports:
+      - "80:80" # HTTP (Caddy redirects to HTTPS + serves ACME challenges)
+      - "443:443" # HTTPS
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN to your domain name (e.g. badminton.example.com)}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data # persisted TLS certificates — keep this or you'll re-issue on every restart
+      - caddy-config:/config
+    depends_on:
+      - app
+
+volumes:
+  badminton-db:
+  caddy-data:
+  caddy-config:

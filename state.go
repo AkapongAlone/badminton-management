@@ -35,16 +35,15 @@ func (s *Server) handleState(c *fiber.Ctx) error {
 		return errJSON(c, 500, err.Error())
 	}
 
-	// Match queue + finished-game history (admin only — public board doesn't need them)
-	matchQueue := []MatchQueueItem{}
-	history := []HistoryGame{}
-	if isAdmin {
-		if matchQueue, err = s.loadMatchQueue(sessionID); err != nil {
-			return errJSON(c, 500, err.Error())
-		}
-		if history, err = s.loadHistory(sessionID); err != nil {
-			return errJSON(c, 500, err.Error())
-		}
+	// Match queue and history are both public — viewers see what's coming up and
+	// what's already finished. Summary/billing totals are still admin-only.
+	matchQueue, err := s.loadMatchQueue(sessionID)
+	if err != nil {
+		return errJSON(c, 500, err.Error())
+	}
+	history, err := s.loadHistory(sessionID)
+	if err != nil {
+		return errJSON(c, 500, err.Error())
 	}
 
 	cfg := sr.Config
@@ -158,7 +157,7 @@ func (s *Server) loadMatchQueue(sessionID string) ([]MatchQueueItem, error) {
 
 func (s *Server) loadHistory(sessionID string) ([]HistoryGame, error) {
 	rows, err := s.db.Query(`
-		SELECT g.id, COALESCE(c.label, ''), g.team_a, g.team_b, g.started_at, g.ended_at, g.shuttles_used
+		SELECT g.id, COALESCE(c.label, ''), g.team_a, g.team_b, g.started_at, g.ended_at, g.shuttles_used, g.result
 		FROM games g LEFT JOIN courts c ON c.id = g.court_id
 		WHERE g.session_id = ? AND g.ended_at IS NOT NULL
 		ORDER BY g.ended_at DESC`, sessionID)
@@ -170,11 +169,15 @@ func (s *Server) loadHistory(sessionID string) ([]HistoryGame, error) {
 	for rows.Next() {
 		var h HistoryGame
 		var ta, tb string
-		if err := rows.Scan(&h.ID, &h.CourtLabel, &ta, &tb, &h.StartedAt, &h.EndedAt, &h.ShuttlesUsed); err != nil {
+		var result sql.NullString
+		if err := rows.Scan(&h.ID, &h.CourtLabel, &ta, &tb, &h.StartedAt, &h.EndedAt, &h.ShuttlesUsed, &result); err != nil {
 			return nil, err
 		}
 		json.Unmarshal([]byte(ta), &h.TeamA)
 		json.Unmarshal([]byte(tb), &h.TeamB)
+		if result.Valid {
+			h.Result = &result.String
+		}
 		history = append(history, h)
 	}
 	return history, nil
